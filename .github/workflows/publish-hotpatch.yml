@@ -1,0 +1,237 @@
+name: publish-hotpatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      codex_version:
+        description: Upstream Codex version to package
+        required: true
+      release_tag:
+        description: Release tag for the hotpatch assets
+        required: true
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  detect-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      codex_version: ${{ steps.detect.outputs.codex_version }}
+      codex_ref: ${{ steps.detect.outputs.codex_ref }}
+      release_tag: ${{ steps.detect.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - id: detect
+        shell: bash
+        run: |
+          REF="${{ github.event.inputs.codex_version }}"
+          VERSION="${{ github.event.inputs.codex_version }}"
+          if [ -z "$REF" ]; then
+            REF="$(node ./scripts/detect-upstream-release.mjs --field tagName)"
+            VERSION="$(node ./scripts/detect-upstream-release.mjs --field normalizedVersion)"
+          else
+            if [[ "$REF" != rust-v* && "$REF" != v* ]]; then
+              REF="rust-v$REF"
+            fi
+            VERSION="${REF#rust-v}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "codex_ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "codex_version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            echo "release_tag=${{ github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_tag=hotpatch-$VERSION" >> "$GITHUB_OUTPUT"
+          fi
+
+  fetch-upstream:
+    needs: detect-upstream
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            artifact_suffix: win32-x64
+            executable_name: codex.exe
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            artifact_suffix: linux-x64
+            executable_name: codex
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Fetch official upstream binary
+        shell: bash
+        run: |
+          mkdir -p dist/upstream
+          node ./scripts/fetch-upstream-binary.mjs \
+            --codex-version "${{ needs.detect-upstream.outputs.codex_version }}" \
+            --platform "${{ matrix.platform }}" \
+            --arch "${{ matrix.arch }}" \
+            --output "dist/upstream/${{ matrix.executable_name }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: upstream-${{ matrix.artifact_suffix }}
+          path: dist/upstream/${{ matrix.executable_name }}
+
+  build-overlay:
+    needs: detect-upstream
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            artifact_suffix: win32-x64
+            executable_name: codex.exe
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            artifact_suffix: linux-x64
+            executable_name: codex
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          ref: ${{ needs.detect-upstream.outputs.codex_ref }}
+          path: upstream
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply maintained hot-reload patch program
+        shell: bash
+        run: |
+          mkdir -p dist/debug
+          node ./scripts/apply-maintained-patch.mjs --upstream-root ./upstream --json > dist/debug/patch-report-${{ matrix.artifact_suffix }}.json
+      - name: Run focused regressions
+        shell: bash
+        working-directory: upstream/codex-rs
+        run: |
+          cargo test -p codex-core --lib --release client::tests::current_client_setup_reloads_auth_from_disk_between_turns -- --exact
+          cargo test -p codex-core --test all --release suite::client_websockets::responses_websocket_reconnects_when_auth_snapshot_changes_between_turns -- --exact
+      - name: Build patched Codex CLI
+        shell: bash
+        working-directory: upstream/codex-rs
+        run: cargo build -p codex-cli --release --locked
+      - name: Package overlay artifact
+        shell: bash
+        run: |
+          mkdir -p dist/overlay
+          cp "upstream/codex-rs/target/release/${{ matrix.executable_name }}" "dist/overlay/codex-${{ needs.detect-upstream.outputs.codex_version }}-${{ matrix.artifact_suffix }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: overlay-${{ matrix.artifact_suffix }}
+          path: dist/overlay/*
+      - name: Upload debug bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ matrix.artifact_suffix }}
+          path: |
+            dist/debug/*
+            upstream/codex-rs/core/src/client.rs
+            upstream/codex-rs/core/src/client_tests.rs
+            upstream/codex-rs/core/tests/common/responses.rs
+            upstream/codex-rs/core/tests/suite/client_websockets.rs
+
+  build-manifests:
+    needs: [detect-upstream, fetch-upstream, build-overlay]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            artifact_suffix: win32-x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            artifact_suffix: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: upstream-${{ matrix.artifact_suffix }}
+          path: artifacts/upstream
+      - uses: actions/download-artifact@v4
+        with:
+          name: overlay-${{ matrix.artifact_suffix }}
+          path: artifacts/overlay
+      - name: Generate manifest slice
+        shell: bash
+        run: |
+          OVERLAY_FILE="$(find artifacts/overlay -type f | head -n 1)"
+          OVERLAY_NAME="$(basename "$OVERLAY_FILE")"
+          RELEASE_TAG="${{ needs.detect-upstream.outputs.release_tag }}"
+          node ./scripts/generate-manifest.mjs \
+            --codex-version "${{ needs.detect-upstream.outputs.codex_version }}" \
+            --platform "${{ matrix.platform }}" \
+            --arch "${{ matrix.arch }}" \
+            --upstream-binary "$(find artifacts/upstream -type f | head -n 1)" \
+            --overlay-binary "$OVERLAY_FILE" \
+            --overlay-filename "$OVERLAY_NAME" \
+            --overlay-url "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/$OVERLAY_NAME" \
+            --output "dist/manifests/${{ matrix.artifact_suffix }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifest-${{ matrix.artifact_suffix }}
+          path: dist/manifests/${{ matrix.artifact_suffix }}.json
+
+  publish:
+    needs: [detect-upstream, build-manifests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: manifest-*
+          merge-multiple: true
+          path: dist/manifests
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: overlay-*
+          merge-multiple: true
+          path: dist/overlays
+      - name: Merge manifest slices
+        run: node ./scripts/merge-manifests.mjs --input-dir dist/manifests --output dist/release/manifest.json
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.detect-upstream.outputs.release_tag }}
+          files: |
+            dist/release/manifest.json
+            dist/overlays/*

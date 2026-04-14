@@ -1,0 +1,684 @@
+diff --git a/codex-rs/core/src/client_tests.rs b/codex-rs/core/src/client_tests.rs
+index 2fd5f04..a3cc188 100644
+--- a/codex-rs/core/src/client_tests.rs
++++ b/codex-rs/core/src/client_tests.rs
+@@ -9,6 +9,8 @@ use super::X_CODEX_WINDOW_ID_HEADER;
+ use super::X_OPENAI_SUBAGENT_HEADER;
+ use codex_api::CoreAuthProvider;
+ use codex_app_server_protocol::AuthMode;
++use codex_config::types::AuthCredentialsStoreMode;
++use codex_login::CodexAuth;
+ use codex_model_provider_info::WireApi;
+ use codex_model_provider_info::create_oss_provider_with_base_url;
+ use codex_otel::SessionTelemetry;
+@@ -18,6 +20,8 @@ use codex_protocol::protocol::SessionSource;
+ use codex_protocol::protocol::SubAgentSource;
+ use pretty_assertions::assert_eq;
+ use serde_json::json;
++use std::path::Path;
++use tempfile::TempDir;
+ 
+ fn test_model_client(session_source: SessionSource) -> ModelClient {
+     let provider = create_oss_provider_with_base_url("https://example.com/v1", WireApi::Responses);
+@@ -34,6 +38,45 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
+     )
+ }
+ 
++#[expect(clippy::unwrap_used)]
++fn write_chatgpt_auth_json(codex_home: &Path, access_token: &str, account_id: &str) {
++    use base64::Engine as _;
++
++    let header = json!({ "alg": "none", "typ": "JWT" });
++    let payload = json!({
++        "email": "user@example.com",
++        "https://api.openai.com/auth": {
++            "chatgpt_plan_type": "plus",
++            "chatgpt_account_id": account_id
++        }
++    });
++    let b64 = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
++    let fake_jwt = format!(
++        "{}.{}.{}",
++        b64(&serde_json::to_vec(&header).unwrap()),
++        b64(&serde_json::to_vec(&payload).unwrap()),
++        b64(b"sig")
++    );
++
++    let auth_json = json!({
++        "auth_mode": "chatgpt",
++        "OPENAI_API_KEY": null,
++        "tokens": {
++            "id_token": fake_jwt,
++            "access_token": access_token,
++            "refresh_token": "refresh-test",
++            "account_id": account_id
++        },
++        "last_refresh": chrono::Utc::now(),
++    });
++
++    std::fs::write(
++        codex_home.join("auth.json"),
++        serde_json::to_string_pretty(&auth_json).unwrap(),
++    )
++    .unwrap();
++}
++
+ fn test_model_info() -> ModelInfo {
+     serde_json::from_value(json!({
+         "slug": "gpt-test",
+@@ -169,3 +212,57 @@ fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
+     assert_eq!(auth_context.recovery_mode, Some("managed"));
+     assert_eq!(auth_context.recovery_phase, Some("refresh_token"));
+ }
++
++#[tokio::test]
++async fn current_client_setup_reloads_auth_from_disk_between_turns() {
++    let codex_home = TempDir::new().expect("tempdir");
++    write_chatgpt_auth_json(codex_home.path(), "token-one", "acc-one");
++
++    let provider = create_oss_provider_with_base_url("https://example.com/v1", WireApi::Responses);
++    let auth = CodexAuth::from_auth_storage(codex_home.path(), AuthCredentialsStoreMode::File)
++        .expect("load auth")
++        .expect("auth exists");
++    let auth_manager =
++        crate::test_support::auth_manager_from_auth_with_home(auth, codex_home.path().to_path_buf());
++    let client = ModelClient::new(
++        Some(auth_manager),
++        ThreadId::new(),
++        /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
++        provider,
++        SessionSource::Cli,
++        /*model_verbosity*/ None,
++        /*enable_request_compression*/ false,
++        /*include_timing_metrics*/ false,
++        /*beta_features_header*/ None,
++    );
++
++    let first = client
++        .current_client_setup()
++        .await
++        .expect("first client setup");
++    assert_eq!(
++        first
++            .auth
++            .as_ref()
++            .and_then(|auth| auth.get_token().ok())
++            .as_deref(),
++        Some("token-one")
++    );
++    assert!(!first.auth_connection_changed);
++
++    write_chatgpt_auth_json(codex_home.path(), "token-two", "acc-two");
++
++    let second = client
++        .current_client_setup()
++        .await
++        .expect("second client setup");
++    assert_eq!(
++        second
++            .auth
++            .as_ref()
++            .and_then(|auth| auth.get_token().ok())
++            .as_deref(),
++        Some("token-two")
++    );
++    assert!(second.auth_connection_changed);
++}
+diff --git a/codex-rs/core/tests/common/responses.rs b/codex-rs/core/tests/common/responses.rs
+index 2e2155e..237e403 100644
+--- a/codex-rs/core/tests/common/responses.rs
++++ b/codex-rs/core/tests/common/responses.rs
+@@ -3,6 +3,8 @@
+ use std::collections::VecDeque;
+ use std::sync::Arc;
+ use std::sync::Mutex;
++use std::sync::atomic::AtomicBool;
++use std::sync::atomic::Ordering;
+ use std::time::Duration;
+ 
+ use anyhow::Result;
+@@ -16,6 +18,8 @@ use serde_json::Value;
+ use tokio::net::TcpListener;
+ use tokio::sync::Notify;
+ use tokio::sync::oneshot;
++use tokio::sync::watch;
++use tokio::task::JoinSet;
+ use tokio_tungstenite::accept_hdr_async_with_config;
+ use tokio_tungstenite::tungstenite::Message;
+ use tokio_tungstenite::tungstenite::extensions::ExtensionsConfig;
+@@ -1214,16 +1218,23 @@ pub async fn start_websocket_server_with_headers(
+     let request_log = Arc::clone(&request_log_updated);
+     let connections = Arc::new(Mutex::new(VecDeque::from(connections)));
+     let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
++    let shutdown_state = Arc::new(AtomicBool::new(false));
++    let (shutdown_watch_tx, shutdown_watch_rx) = watch::channel(false);
+ 
+     let task = tokio::spawn(async move {
++        let mut connection_tasks = JoinSet::new();
+         loop {
+             let accept_res = tokio::select! {
+-                _ = &mut shutdown_rx => return,
++                _ = &mut shutdown_rx => {
++                    shutdown_state.store(true, Ordering::SeqCst);
++                    let _ = shutdown_watch_tx.send(true);
++                    break;
++                },
+                 accept_res = listener.accept() => accept_res,
+             };
+             let (stream, _) = match accept_res {
+                 Ok(value) => value,
+-                Err(_) => return,
++                Err(_) => break,
+             };
+             let connection = {
+                 let mut pending = connections.lock().unwrap();
+@@ -1234,132 +1245,152 @@ pub async fn start_websocket_server_with_headers(
+                 continue;
+             };
+ 
+-            if let Some(delay) = connection.accept_delay {
+-                tokio::time::sleep(delay).await;
+-            }
+-
+             let response_headers = connection.response_headers.clone();
+             let handshake_log = Arc::clone(&handshakes);
+-            let callback = move |req: &Request, mut response: Response| {
+-                let headers = req
+-                    .headers()
+-                    .iter()
+-                    .filter_map(|(name, value)| {
+-                        value
+-                            .to_str()
+-                            .ok()
+-                            .map(|value| (name.as_str().to_string(), value.to_string()))
+-                    })
+-                    .collect();
+-                handshake_log.lock().unwrap().push(WebSocketHandshake {
+-                    uri: req.uri().to_string(),
+-                    headers,
+-                });
+-
+-                let headers_mut = response.headers_mut();
+-                for (name, value) in &response_headers {
+-                    if let (Ok(name), Ok(value)) = (
+-                        HeaderName::from_bytes(name.as_bytes()),
+-                        HeaderValue::from_str(value),
+-                    ) {
+-                        headers_mut.insert(name, value);
+-                    }
++            let requests = Arc::clone(&requests);
++            let request_log = Arc::clone(&request_log);
++            let start = start;
++            let shutdown_state = Arc::clone(&shutdown_state);
++            let mut shutdown_watch = shutdown_watch_rx.clone();
++
++            connection_tasks.spawn(async move {
++                if let Some(delay) = connection.accept_delay {
++                    tokio::time::sleep(delay).await;
+                 }
+ 
+-                Ok(response)
+-            };
++                let callback = move |req: &Request, mut response: Response| {
++                    let headers = req
++                        .headers()
++                        .iter()
++                        .filter_map(|(name, value)| {
++                            value
++                                .to_str()
++                                .ok()
++                                .map(|value| (name.as_str().to_string(), value.to_string()))
++                        })
++                        .collect();
++                    handshake_log.lock().unwrap().push(WebSocketHandshake {
++                        uri: req.uri().to_string(),
++                        headers,
++                    });
++
++                    let headers_mut = response.headers_mut();
++                    for (name, value) in &response_headers {
++                        if let (Ok(name), Ok(value)) = (
++                            HeaderName::from_bytes(name.as_bytes()),
++                            HeaderValue::from_str(value),
++                        ) {
++                            headers_mut.insert(name, value);
++                        }
++                    }
+ 
+-            let mut ws_stream = match accept_hdr_async_with_config(
+-                stream,
+-                callback,
+-                Some(websocket_accept_config()),
+-            )
+-            .await
+-            {
+-                Ok(ws) => ws,
+-                Err(_) => continue,
+-            };
++                    Ok(response)
++                };
+ 
+-            let connection_index = {
+-                let mut log = requests.lock().unwrap();
+-                log.push(Vec::new());
+-                log.len() - 1
+-            };
+-            let close_after_requests = connection.close_after_requests;
+-            for request_events in connection.requests {
+-                let Some(Ok(message)) = ws_stream.next().await else {
+-                    break;
++                let mut ws_stream = match accept_hdr_async_with_config(
++                    stream,
++                    callback,
++                    Some(websocket_accept_config()),
++                )
++                .await
++                {
++                    Ok(ws) => ws,
++                    Err(_) => return,
+                 };
+-                if let Some(body) = parse_ws_request_body(message) {
+-                    let mut log = requests.lock().unwrap();
+-                    if let Some(connection_log) = log.get_mut(connection_index) {
+-                        connection_log.push(WebSocketRequest { body });
+-                        let request_index = connection_log.len() - 1;
+-                        let request = &connection_log[request_index];
+-                        let request_body = request.body_json();
+-                        eprintln!(
+-                            "[ws test server +{}ms] connection={} received request={} type={:?} role={:?} text={:?} data={:?}",
+-                            start.elapsed().as_millis(),
+-                            connection_index,
+-                            request_index,
+-                            request_body.get("type").and_then(Value::as_str),
+-                            request_body
+-                                .get("item")
+-                                .and_then(|item| item.get("role"))
+-                                .and_then(Value::as_str),
+-                            request_body
+-                                .get("item")
+-                                .and_then(|item| item.get("content"))
+-                                .and_then(Value::as_array)
+-                                .and_then(|content| content.first())
+-                                .and_then(|content| content.get("text"))
+-                                .and_then(Value::as_str),
+-                            request_body
+-                                .get("item")
+-                                .and_then(|item| item.get("content"))
+-                                .and_then(Value::as_array)
+-                                .and_then(|content| content.first())
+-                                .and_then(|content| content.get("data"))
+-                                .and_then(Value::as_str),
+-                        );
+-                    }
+-                    request_log.notify_waiters();
+-                }
+ 
+-                eprintln!(
+-                    "[ws test server +{}ms] connection={} sending batch_size={} event_types={:?} audio_data={:?}",
+-                    start.elapsed().as_millis(),
+-                    connection_index,
+-                    request_events.len(),
+-                    request_events
+-                        .iter()
+-                        .map(|event| event.get("type").and_then(Value::as_str))
+-                        .collect::<Vec<_>>(),
+-                    request_events
+-                        .iter()
+-                        .find_map(|event| event.get("delta").and_then(Value::as_str)),
+-                );
+-                for event in &request_events {
+-                    let Ok(payload) = serde_json::to_string(event) else {
+-                        continue;
++                let connection_index = {
++                    let mut log = requests.lock().unwrap();
++                    log.push(Vec::new());
++                    log.len() - 1
++                };
++                let close_after_requests = connection.close_after_requests;
++                for request_events in connection.requests {
++                    let message = if close_after_requests || *shutdown_watch.borrow() {
++                        ws_stream.next().await
++                    } else {
++                        tokio::select! {
++                            message = ws_stream.next() => message,
++                            changed = shutdown_watch.changed() => {
++                                let _ = changed;
++                                None
++                            }
++                        }
+                     };
+-                    if ws_stream.send(Message::Text(payload.into())).await.is_err() {
++                    let Some(Ok(message)) = message else {
+                         break;
++                    };
++                    if let Some(body) = parse_ws_request_body(message) {
++                        let mut log = requests.lock().unwrap();
++                        if let Some(connection_log) = log.get_mut(connection_index) {
++                            connection_log.push(WebSocketRequest { body });
++                            let request_index = connection_log.len() - 1;
++                            let request = &connection_log[request_index];
++                            let request_body = request.body_json();
++                            eprintln!(
++                                "[ws test server +{}ms] connection={} received request={} type={:?} role={:?} text={:?} data={:?}",
++                                start.elapsed().as_millis(),
++                                connection_index,
++                                request_index,
++                                request_body.get("type").and_then(Value::as_str),
++                                request_body
++                                    .get("item")
++                                    .and_then(|item| item.get("role"))
++                                    .and_then(Value::as_str),
++                                request_body
++                                    .get("item")
++                                    .and_then(|item| item.get("content"))
++                                    .and_then(Value::as_array)
++                                    .and_then(|content| content.first())
++                                    .and_then(|content| content.get("text"))
++                                    .and_then(Value::as_str),
++                                request_body
++                                    .get("item")
++                                    .and_then(|item| item.get("content"))
++                                    .and_then(Value::as_array)
++                                    .and_then(|content| content.first())
++                                    .and_then(|content| content.get("data"))
++                                    .and_then(Value::as_str),
++                            );
++                        }
++                        request_log.notify_waiters();
+                     }
+-                }
+-            }
+ 
+-            if close_after_requests {
+-                let _ = ws_stream.close(None).await;
+-            } else {
+-                let _ = shutdown_rx.await;
+-                return;
+-            }
++                    eprintln!(
++                        "[ws test server +{}ms] connection={} sending batch_size={} event_types={:?} audio_data={:?}",
++                        start.elapsed().as_millis(),
++                        connection_index,
++                        request_events.len(),
++                        request_events
++                            .iter()
++                            .map(|event| event.get("type").and_then(Value::as_str))
++                            .collect::<Vec<_>>(),
++                        request_events
++                            .iter()
++                            .find_map(|event| event.get("delta").and_then(Value::as_str)),
++                    );
++                    for event in &request_events {
++                        let Ok(payload) = serde_json::to_string(event) else {
++                            continue;
++                        };
++                        if ws_stream.send(Message::Text(payload.into())).await.is_err() {
++                            break;
++                        }
++                    }
++                }
+ 
+-            if connections.lock().unwrap().is_empty() {
+-                return;
+-            }
++                if close_after_requests {
++                    let _ = ws_stream.close(None).await;
++                } else if !shutdown_state.load(Ordering::SeqCst) {
++                    while !*shutdown_watch.borrow() {
++                        if shutdown_watch.changed().await.is_err() {
++                            break;
++                        }
++                    }
++                }
++            });
+         }
++
++        while connection_tasks.join_next().await.is_some() {}
+     });
+ 
+     WebSocketTestServer {
+diff --git a/codex-rs/core/tests/suite/client_websockets.rs b/codex-rs/core/tests/suite/client_websockets.rs
+index 424f676..2917995 100755
+--- a/codex-rs/core/tests/suite/client_websockets.rs
++++ b/codex-rs/core/tests/suite/client_websockets.rs
+@@ -1,6 +1,7 @@
+ #![allow(clippy::expect_used, clippy::unwrap_used)]
+ use codex_api::WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY;
+ use codex_api::WS_REQUEST_HEADER_TRACESTATE_CLIENT_METADATA_KEY;
++use codex_config::types::AuthCredentialsStoreMode;
+ use codex_core::ModelClient;
+ use codex_core::ModelClientSession;
+ use codex_core::Prompt;
+@@ -45,6 +46,8 @@ use futures::StreamExt;
+ use opentelemetry_sdk::metrics::InMemoryMetricExporter;
+ use pretty_assertions::assert_eq;
+ use serde_json::json;
++use std::path::Path;
++use std::path::PathBuf;
+ use std::sync::Arc;
+ use std::time::Duration;
+ use tempfile::TempDir;
+@@ -85,6 +88,7 @@ fn assert_request_trace_matches(body: &serde_json::Value, expected_trace: &W3cTr
+ 
+ struct WebsocketTestHarness {
+     _codex_home: TempDir,
++    codex_home_path: PathBuf,
+     client: ModelClient,
+     conversation_id: ThreadId,
+     model_info: ModelInfo,
+@@ -93,6 +97,46 @@ struct WebsocketTestHarness {
+     session_telemetry: SessionTelemetry,
+ }
+ 
++#[expect(clippy::unwrap_used)]
++fn write_chatgpt_auth_json(codex_home: &Path, access_token: &str, account_id: &str) {
++    use base64::Engine as _;
++
++    let header = json!({ "alg": "none", "typ": "JWT" });
++    let payload = json!({
++        "email": "user@example.com",
++        "https://api.openai.com/auth": {
++            "chatgpt_plan_type": "plus",
++            "chatgpt_account_id": account_id,
++        }
++    });
++
++    let b64 = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
++    let fake_jwt = format!(
++        "{}.{}.{}",
++        b64(&serde_json::to_vec(&header).unwrap()),
++        b64(&serde_json::to_vec(&payload).unwrap()),
++        b64(b"sig")
++    );
++
++    let auth_json = json!({
++        "auth_mode": "chatgpt",
++        "OPENAI_API_KEY": null,
++        "tokens": {
++            "id_token": fake_jwt,
++            "access_token": access_token,
++            "refresh_token": "refresh-test",
++            "account_id": account_id,
++        },
++        "last_refresh": chrono::Utc::now(),
++    });
++
++    std::fs::write(
++        codex_home.join("auth.json"),
++        serde_json::to_string_pretty(&auth_json).unwrap(),
++    )
++    .unwrap();
++}
++
+ #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+ async fn responses_websocket_streams_request() {
+     skip_if_no_network!();
+@@ -364,6 +408,75 @@ async fn responses_websocket_reuses_connection_after_session_drop() {
+     server.shutdown().await;
+ }
+ 
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn responses_websocket_reconnects_when_auth_snapshot_changes_between_turns() {
++    skip_if_no_network!();
++
++    let server = start_websocket_server_with_headers(vec![
++        WebSocketConnectionConfig {
++            requests: vec![
++                vec![ev_response_created("resp-1"), ev_completed("resp-1")],
++                vec![
++                    ev_response_created("resp-reused"),
++                    ev_completed("resp-reused"),
++                ],
++            ],
++            response_headers: Vec::new(),
++            accept_delay: None,
++            close_after_requests: false,
++        },
++        WebSocketConnectionConfig {
++            requests: vec![vec![ev_response_created("resp-2"), ev_completed("resp-2")]],
++            response_headers: Vec::new(),
++            accept_delay: None,
++            close_after_requests: false,
++        },
++    ])
++    .await;
++
++    let harness = authenticated_websocket_harness(&server).await;
++    let prompt_one = prompt_with_input(vec![message_item("hello")]);
++    let prompt_two = prompt_with_input(vec![message_item("switched")]);
++
++    let mut first_turn = harness.client.new_session();
++    tokio::time::timeout(
++        Duration::from_secs(5),
++        stream_until_complete(&mut first_turn, &harness, &prompt_one),
++    )
++    .await
++    .expect("first authenticated websocket turn timed out");
++    assert!(
++        server.wait_for_handshakes(1, Duration::from_secs(1)).await,
++        "expected first websocket handshake",
++    );
++
++    write_chatgpt_auth_json(&harness.codex_home_path, "token-two", "acc-two");
++
++    let mut second_turn = harness.client.new_session();
++    tokio::time::timeout(
++        Duration::from_secs(5),
++        stream_until_complete(&mut second_turn, &harness, &prompt_two),
++    )
++    .await
++    .expect("second authenticated websocket turn timed out");
++    assert!(
++        server.wait_for_handshakes(2, Duration::from_secs(1)).await,
++        "expected websocket reconnect after auth snapshot change",
++    );
++
++    assert_eq!(server.handshakes().len(), 2);
++    assert_eq!(
++        server.handshakes()[0].header("authorization").as_deref(),
++        Some("Bearer token-one")
++    );
++    assert_eq!(
++        server.handshakes()[1].header("authorization").as_deref(),
++        Some("Bearer token-two")
++    );
++
++    server.shutdown().await;
++}
++
+ #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+ async fn responses_websocket_preconnect_is_reused_even_with_header_changes() {
+     skip_if_no_network!();
+@@ -1721,6 +1834,12 @@ fn websocket_provider(server: &WebSocketTestServer) -> ModelProviderInfo {
+     websocket_provider_with_connect_timeout(server, /*websocket_connect_timeout_ms*/ None)
+ }
+ 
++fn authenticated_websocket_provider(server: &WebSocketTestServer) -> ModelProviderInfo {
++    let mut provider = websocket_provider(server);
++    provider.requires_openai_auth = true;
++    provider
++}
++
+ fn websocket_provider_with_connect_timeout(
+     server: &WebSocketTestServer,
+     websocket_connect_timeout_ms: Option<u64>,
+@@ -1771,11 +1890,37 @@ async fn websocket_harness_with_options(
+         .await
+ }
+ 
++async fn authenticated_websocket_harness(server: &WebSocketTestServer) -> WebsocketTestHarness {
++    let codex_home = TempDir::new().unwrap();
++    write_chatgpt_auth_json(codex_home.path(), "token-one", "acc-one");
++    websocket_harness_with_provider_options_and_home(
++        authenticated_websocket_provider(server),
++        /*runtime_metrics_enabled*/ false,
++        codex_home,
++        /*use_auth_from_home*/ true,
++    )
++    .await
++}
++
+ async fn websocket_harness_with_provider_options(
+     provider: ModelProviderInfo,
+     runtime_metrics_enabled: bool,
+ ) -> WebsocketTestHarness {
+-    let codex_home = TempDir::new().unwrap();
++    websocket_harness_with_provider_options_and_home(
++        provider,
++        runtime_metrics_enabled,
++        TempDir::new().unwrap(),
++        /*use_auth_from_home*/ false,
++    )
++    .await
++}
++
++async fn websocket_harness_with_provider_options_and_home(
++    provider: ModelProviderInfo,
++    runtime_metrics_enabled: bool,
++    codex_home: TempDir,
++    use_auth_from_home: bool,
++) -> WebsocketTestHarness {
+     let mut config = load_default_config_for_test(&codex_home).await;
+     config.model = Some(MODEL.to_string());
+     if runtime_metrics_enabled {
+@@ -1787,8 +1932,19 @@ async fn websocket_harness_with_provider_options(
+     let config = Arc::new(config);
+     let model_info = codex_core::test_support::construct_model_info_offline(MODEL, &config);
+     let conversation_id = ThreadId::new();
+-    let auth_manager =
+-        codex_core::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"));
++    let auth_manager = if use_auth_from_home {
++        let auth = match CodexAuth::from_auth_storage(codex_home.path(), AuthCredentialsStoreMode::File) {
++            Ok(Some(auth)) => auth,
++            Ok(None) => panic!("No CodexAuth found in codex_home"),
++            Err(err) => panic!("Failed to load auth from codex_home: {err}"),
++        };
++        codex_core::test_support::auth_manager_from_auth_with_home(
++            auth,
++            codex_home.path().to_path_buf(),
++        )
++    } else {
++        codex_core::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"))
++    };
+     let exporter = InMemoryMetricExporter::default();
+     let metrics = MetricsClient::new(
+         MetricsConfig::in_memory("test", "codex-core", env!("CARGO_PKG_VERSION"), exporter)
+@@ -1810,8 +1966,9 @@ async fn websocket_harness_with_provider_options(
+     .with_metrics(metrics);
+     let effort = None;
+     let summary = ReasoningSummary::Auto;
++    let codex_home_path = codex_home.path().to_path_buf();
+     let client = ModelClient::new(
+-        /*auth_manager*/ None,
++        /*auth_manager*/ use_auth_from_home.then_some(auth_manager.clone()),
+         conversation_id,
+         /*installation_id*/ TEST_INSTALLATION_ID.to_string(),
+         provider.clone(),
+@@ -1824,6 +1981,7 @@ async fn websocket_harness_with_provider_options(
+ 
+     WebsocketTestHarness {
+         _codex_home: codex_home,
++        codex_home_path,
+         client,
+         conversation_id,
+         model_info,

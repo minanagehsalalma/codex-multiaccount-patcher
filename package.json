@@ -1,0 +1,47 @@
+{
+  "name": "codex-hotpatch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Persistent shim and overlay patcher for Codex auth hot-reload across upstream releases.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minanagehsalalma/codex-hotpatch.git"
+  },
+  "homepage": "https://github.com/minanagehsalalma/codex-hotpatch",
+  "bugs": {
+    "url": "https://github.com/minanagehsalalma/codex-hotpatch/issues"
+  },
+  "keywords": [
+    "codex",
+    "openai",
+    "patcher",
+    "hotpatch",
+    "cli",
+    "windows",
+    "linux"
+  ],
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "bin": {
+    "codex-hotpatch": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "patch:apply": "node ./scripts/apply-maintained-patch.mjs",
+    "patch:check": "node ./scripts/apply-maintained-patch.mjs --mode check",
+    "manifest:generate": "node ./scripts/generate-manifest.mjs",
+    "manifest:merge": "node ./scripts/merge-manifests.mjs",
+    "upstream:detect": "node ./scripts/detect-upstream-release.mjs",
+    "upstream:fetch": "node ./scripts/fetch-upstream-binary.mjs",
+    "versions:matrix": "node ./scripts/resolve-version-matrix.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

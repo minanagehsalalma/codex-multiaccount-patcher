@@ -1,0 +1,104 @@
+name: compatibility-sweep
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: Optional comma-separated versions or tags to test
+        required: false
+      count:
+        description: Number of recent stable versions to test when versions is empty
+        required: false
+        default: "5"
+      min_version:
+        description: Optional minimum stable version to include
+        required: false
+        default: "0.118.0"
+      target_set:
+        description: fast=Linux only, full=Linux+Windows
+        required: false
+        default: "fast"
+  schedule:
+    - cron: "43 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - id: resolve
+        shell: bash
+        run: |
+          args=()
+          if [ -n "${{ github.event.inputs.versions }}" ]; then
+            args+=(--versions "${{ github.event.inputs.versions }}")
+          else
+            args+=(--count "${{ github.event.inputs.count || '5' }}")
+            if [ -n "${{ github.event.inputs.min_version || '0.118.0' }}" ]; then
+              args+=(--min-version "${{ github.event.inputs.min_version || '0.118.0' }}")
+            fi
+          fi
+          args+=(--target-set "${{ github.event.inputs.target_set || 'fast' }}")
+          MATRIX="$(node ./scripts/resolve-version-matrix.mjs "${args[@]}")"
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  sweep:
+    needs: resolve-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          ref: ${{ matrix.codex_ref }}
+          path: upstream
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply maintained patch program
+        shell: bash
+        run: |
+          mkdir -p dist/debug
+          node ./scripts/apply-maintained-patch.mjs --upstream-root ./upstream --json > "dist/debug/patch-report-${{ matrix.codex_version }}-${{ matrix.artifact_suffix }}.json"
+      - name: Run focused regressions
+        shell: bash
+        working-directory: upstream/codex-rs
+        run: |
+          cargo test -p codex-core --lib --release client::tests::current_client_setup_reloads_auth_from_disk_between_turns -- --exact
+          cargo test -p codex-core --test all --release suite::client_websockets::responses_websocket_reconnects_when_auth_snapshot_changes_between_turns -- --exact
+      - name: Build patched Codex CLI
+        shell: bash
+        working-directory: upstream/codex-rs
+        run: cargo build -p codex-cli --release --locked
+      - name: Smoke-check built binary
+        shell: bash
+        working-directory: upstream/codex-rs
+        run: |
+          ./target/release/${{ matrix.executable_name }} --version
+      - name: Upload compatibility debug bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-${{ matrix.codex_version }}-${{ matrix.artifact_suffix }}
+          path: |
+            dist/debug/*
+            upstream/codex-rs/core/src/client.rs
+            upstream/codex-rs/core/src/client_tests.rs
+            upstream/codex-rs/core/tests/common/responses.rs
+            upstream/codex-rs/core/tests/suite/client_websockets.rs
