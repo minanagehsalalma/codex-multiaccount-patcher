@@ -15,6 +15,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: publish-hotpatch-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   detect-upstream:
     runs-on: ubuntu-latest

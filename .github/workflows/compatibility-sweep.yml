@@ -24,6 +24,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: compatibility-sweep-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   resolve-matrix:
     runs-on: ubuntu-latest

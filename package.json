@@ -1,7 +1,6 @@
 {
   "name": "codex-hotpatch",
   "version": "0.1.0",
-  "private": true,
   "description": "Persistent shim and overlay patcher for Codex auth hot-reload across upstream releases.",
   "license": "Apache-2.0",
   "type": "module",
