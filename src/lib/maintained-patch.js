@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 const CLIENT_RELATIVE_PATH = path.join("codex-rs", "core", "src", "client.rs");
+const TEST_SUITE_MOD_RELATIVE_PATH = path.join("codex-rs", "core", "tests", "suite", "mod.rs");
 const TEST_FALLBACK_PATCH = path.join("patches", "codex-hot-reload-tests.patch");
 
 const CLIENT_RUNTIME_REWRITES = [
@@ -195,6 +196,42 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
   },
 ];
 
+const TEST_SUITE_MOD_REWRITES = [
+  {
+    id: "suite-mod-pathbuf-import",
+    anchor: `use std::path::Path;
+`,
+    addition: `use std::path::PathBuf;
+`,
+    sentinel: "use std::path::PathBuf;",
+  },
+  {
+    id: "suite-mod-safe-codex-home",
+    search: `    #[allow(clippy::unwrap_used)]
+    let codex_home = tempfile::Builder::new()
+        .prefix("codex-core-tests")
+        .tempdir()
+        .unwrap();
+`,
+    replacement: `    #[allow(clippy::unwrap_used)]
+    let codex_home_root = std::env::var_os("CODEX_TEST_CODEX_HOME_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap()
+                .join(".codex-test-home")
+        });
+    #[allow(clippy::unwrap_used)]
+    std::fs::create_dir_all(&codex_home_root).unwrap();
+    #[allow(clippy::unwrap_used)]
+    let codex_home = tempfile::Builder::new()
+        .prefix("codex-core-tests")
+        .tempdir_in(&codex_home_root)
+        .unwrap();
+`,
+  },
+];
+
 export async function applyMaintainedPatch({
   projectRoot,
   upstreamRoot,
@@ -212,6 +249,17 @@ export async function applyMaintainedPatch({
     await fs.writeFile(clientPath, preserveEol(originalClientText, runtimeResult.text), "utf8");
   }
 
+  const testSuiteModPath = path.join(upstreamRoot, TEST_SUITE_MOD_RELATIVE_PATH);
+  const originalTestSuiteModText = await fs.readFile(testSuiteModPath, "utf8");
+  const testSuiteModResult = applyTestSuiteModRewrites(originalTestSuiteModText);
+  if (mode === "apply" && testSuiteModResult.changed) {
+    await fs.writeFile(
+      testSuiteModPath,
+      preserveEol(originalTestSuiteModText, testSuiteModResult.text),
+      "utf8",
+    );
+  }
+
   const fallbackPatchPath = path.join(projectRoot, TEST_FALLBACK_PATCH);
   const fallbackPatch = await applyFallbackPatch({
     patchPath: fallbackPatchPath,
@@ -222,15 +270,37 @@ export async function applyMaintainedPatch({
   return {
     clientPath,
     runtime: runtimeResult,
+    testSuiteModPath,
+    testSuiteMod: testSuiteModResult,
     fallbackPatch,
   };
 }
 
 export function applyClientRuntimeRewrites(sourceText) {
-  let text = normalizeEol(sourceText);
+  const { text, steps } = applyRewritePlan(normalizeEol(sourceText), CLIENT_RUNTIME_REWRITES);
+
+  return {
+    changed: normalizeEol(sourceText) !== text,
+    text,
+    steps,
+  };
+}
+
+export function applyTestSuiteModRewrites(sourceText) {
+  const { text, steps } = applyRewritePlan(normalizeEol(sourceText), TEST_SUITE_MOD_REWRITES);
+
+  return {
+    changed: normalizeEol(sourceText) !== text,
+    text,
+    steps,
+  };
+}
+
+function applyRewritePlan(initialText, rewrites) {
+  let text = initialText;
   const steps = [];
 
-  for (const rewrite of CLIENT_RUNTIME_REWRITES) {
+  for (const rewrite of rewrites) {
     if ("anchor" in rewrite) {
       const result = insertAfterUnique(text, rewrite);
       text = result.text;
@@ -242,11 +312,7 @@ export function applyClientRuntimeRewrites(sourceText) {
     steps.push(result.step);
   }
 
-  return {
-    changed: normalizeEol(sourceText) !== text,
-    text,
-    steps,
-  };
+  return { text, steps };
 }
 
 function replaceUnique(text, rewrite) {

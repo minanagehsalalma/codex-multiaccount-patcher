@@ -71,6 +71,11 @@ async function main() {
             changed: result.runtime.changed,
             steps: result.runtime.steps,
           },
+          testSuiteModPath: result.testSuiteModPath,
+          testSuiteMod: {
+            changed: result.testSuiteMod.changed,
+            steps: result.testSuiteMod.steps,
+          },
           fallbackPatch: result.fallbackPatch,
         },
         null,
@@ -81,6 +86,7 @@ async function main() {
   }
 
   process.stdout.write(`runtime-rewrites: ${result.runtime.steps.map((step) => `${step.id}:${step.status}`).join(", ")}\n`);
+  process.stdout.write(`suite-mod-rewrites: ${result.testSuiteMod.steps.map((step) => `${step.id}:${step.status}`).join(", ")}\n`);
   process.stdout.write(`fallback-patch: ${result.fallbackPatch.status}\n`);
 }
 

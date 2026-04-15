@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { applyClientRuntimeRewrites } from "../src/lib/maintained-patch.js";
+import {
+  applyClientRuntimeRewrites,
+  applyTestSuiteModRewrites,
+} from "../src/lib/maintained-patch.js";
 
 const CLEAN_CLIENT_SNIPPET = `struct CurrentClientSetup {
     auth: Option<CodexAuth>,
@@ -115,6 +118,35 @@ test("applyClientRuntimeRewrites patches the runtime hot-reload changes and is i
   assert.match(first.text, /auth_connection_changed: client_setup\.auth_connection_changed,/);
 
   const second = applyClientRuntimeRewrites(first.text);
+
+  assert.equal(second.changed, false);
+  assert.equal(second.steps.every((step) => step.status === "already-applied"), true);
+});
+
+const CLEAN_TEST_SUITE_MOD_SNIPPET = `// Aggregates all former standalone integration tests as modules.
+use std::ffi::OsString;
+use std::path::Path;
+
+use codex_apply_patch::CODEX_CORE_APPLY_PATCH_ARG1;
+use codex_arg0::Arg0PathEntryGuard;
+
+    #[allow(clippy::unwrap_used)]
+    let codex_home = tempfile::Builder::new()
+        .prefix("codex-core-tests")
+        .tempdir()
+        .unwrap();
+`;
+
+test("applyTestSuiteModRewrites moves suite CODEX_HOME out of temporary roots", () => {
+  const first = applyTestSuiteModRewrites(CLEAN_TEST_SUITE_MOD_SNIPPET);
+
+  assert.equal(first.steps.every((step) => step.status === "applied"), true);
+  assert.match(first.text, /use std::path::PathBuf;/);
+  assert.match(first.text, /CODEX_TEST_CODEX_HOME_ROOT/);
+  assert.match(first.text, /\.codex-test-home/);
+  assert.match(first.text, /\.tempdir_in\(&codex_home_root\)/);
+
+  const second = applyTestSuiteModRewrites(first.text);
 
   assert.equal(second.changed, false);
   assert.equal(second.steps.every((step) => step.status === "already-applied"), true);
