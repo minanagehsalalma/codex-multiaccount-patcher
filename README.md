@@ -1,9 +1,12 @@
 # codex-multiaccount-patcher
 
 <p align="center">
-  <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/releases/latest"><img alt="Latest Release" src="https://img.shields.io/github/v/release/minanagehsalalma/codex-multiaccount-patcher?display_name=tag"></a>
-  <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/actions/workflows/publish-hotpatch.yml"><img alt="Publish" src="https://github.com/minanagehsalalma/codex-multiaccount-patcher/actions/workflows/publish-hotpatch.yml/badge.svg"></a>
-  <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/actions/workflows/compatibility-sweep.yml"><img alt="Compatibility Sweep" src="https://github.com/minanagehsalalma/codex-multiaccount-patcher/actions/workflows/compatibility-sweep.yml/badge.svg"></a>
+  <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/releases/latest"><img alt="Latest Release" src="https://img.shields.io/github/v/release/minanagehsalalma/codex-multiaccount-patcher?display_name=tag&label=release"></a>
+  <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-4b5563"></a>
+  <a href="https://nodejs.org/"><img alt="Node 20+" src="https://img.shields.io/badge/node-%3E%3D20-0f766e"></a>
+  <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher"><img alt="Platforms" src="https://img.shields.io/badge/platforms-windows%20%7C%20linux-1d4ed8"></a>
+  <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/actions/workflows/publish-hotpatch.yml?query=branch%3Amain"><img alt="Publish Hotpatch" src="https://github.com/minanagehsalalma/codex-multiaccount-patcher/actions/workflows/publish-hotpatch.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/actions/workflows/compatibility-sweep.yml?query=branch%3Amain"><img alt="Compatibility Sweep" src="https://github.com/minanagehsalalma/codex-multiaccount-patcher/actions/workflows/compatibility-sweep.yml/badge.svg?branch=main"></a>
 </p>
 
 `codex-multiaccount-patcher` keeps a patched `codex` binary in front of the upstream install by owning a higher-precedence shim directory and a managed overlay cache. The point is narrow and practical: Codex should pick up account/auth changes between turns without making you rebuild locally or restart the CLI.
