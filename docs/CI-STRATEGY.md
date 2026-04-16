@@ -41,3 +41,12 @@ If the pain is compile time, better caching on GitHub Actions is the first fix. 
 2. Reuse Rust caches aggressively on both compatibility and publish jobs.
 3. Fail before publish when manifest metadata is wrong.
 4. Only add a second CI provider if GitHub-hosted runner time, not compile work, becomes the real limit.
+
+## Cirrus Fallback
+
+A Linux-only Cirrus fallback lane now lives in [`.cirrus.yml`](../.cirrus.yml). It is intentionally scoped:
+- validate the maintained patch against the latest upstream Codex on Linux
+- run the two focused regressions
+- build the patched CLI once
+
+It is not the authoritative release pipeline. GitHub Actions still owns Windows validation, release manifest generation, and publishing.
