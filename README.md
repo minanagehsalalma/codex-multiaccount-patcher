@@ -54,13 +54,13 @@ If it is you, the important facts are simple:
 
 The main alternatives today are still auth-file switchers, small wrapper scripts, or profile managers that sit next to stock Codex. They solve part of the problem. This project is aimed at the full "switch accounts and keep the Codex runtime in sync" problem.
 
-| Approach | Auth switching | Auto-switch | Runtime hot-reload fix | Cross-platform | Health check / fail-closed |
+| Approach | Auth switching | Auto-switch | **✨ Runtime hot-reload fix** | Cross-platform | Health check / fail-closed |
 | --- | --- | --- | --- | --- | --- |
 | Manual `auth.json` swapping | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`codex-auth`](https://github.com/Loongphy/codex-auth) | ✅ | ✅ | ❌ | ✅ | ❌ |
 | Simple switcher scripts | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Profile managers / wrappers | ✅ | sometimes | ❌ | sometimes | ❌ |
-| `codex-multiaccount-patcher` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `codex-multiaccount-patcher` | ✅ | ✅ | **✅** | ✅ | ✅ |
 
 If you only want to swap auth snapshots manually, lighter tools are fine. If you want the auth manager and patched Codex runtime to stay aligned under one install, this is the stronger model.
 
