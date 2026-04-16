@@ -14,7 +14,7 @@
   </p>
 </div>
 
-`codex-multiaccount-patcher` keeps a patched `codex` binary in front of the upstream install by owning a higher-precedence shim directory and a managed overlay cache. The point is narrow and practical: Codex should pick up account/auth changes between turns without making you rebuild locally or restart the CLI.
+`codex-multiaccount-patcher` is now a single toolkit: it keeps a patched `codex` binary in front of the upstream install and bundles the `codex-auth` account manager behind the same install. The point is still narrow and practical: switch accounts cleanly, auto-switch when thresholds are hit, and let Codex pick up auth changes between turns without making you rebuild locally or restart the CLI.
 
 ## Flight Path
 
@@ -34,26 +34,33 @@ That is the whole shape of the project: discover the real upstream binary, match
 
 ## Quickstart
 
-1. Install Codex normally first. The patcher expects an existing global `@openai/codex` install.
-2. Install the patcher itself:
+1. Install Codex normally first. The toolkit expects an existing global `@openai/codex` install.
+2. Install the toolkit itself:
 
 ```bash
 npm install -g github:minanagehsalalma/codex-multiaccount-patcher
 ```
 
-3. Install the managed shims and pull the latest validated manifest:
+3. Install the managed Codex shims and pull the latest validated manifest:
 
 ```bash
 codex-multiaccount install
 ```
 
-4. Check what the patcher sees:
+4. Check the patched Codex runtime:
 
 ```bash
 codex-multiaccount status
 ```
 
-After that, plain `codex` should route through the managed shim automatically. The legacy alias `codex-hotpatch` still works during the transition.
+5. Check the bundled auth toolkit:
+
+```bash
+codex-multiaccount auth status
+codex-multiaccount auth list
+```
+
+After that, plain `codex` should route through the managed shim automatically. `codex-auth` is also installed as a compatibility alias, and the legacy alias `codex-hotpatch` still works during the transition.
 
 ## What Happens When You Type `codex`
 
@@ -137,8 +144,37 @@ The green path is now zero-touch: detect the latest upstream Codex release, skip
 | `codex-multiaccount repair` | Re-resolve the manifest and refresh the managed runtime |
 | `codex-multiaccount uninstall` | Remove the managed runtime and restore normal `codex` launch behavior |
 | `codex-multiaccount launch -- [codex args...]` | Internal entrypoint used by the managed shims |
+| `codex-multiaccount auth <codex-auth args...>` | Run the bundled auth toolkit through the same install |
+| `codex-multiaccount list` | Convenience alias for `codex-multiaccount auth list` |
+| `codex-multiaccount login [--device-auth]` | Convenience alias for `codex-multiaccount auth login` |
+| `codex-multiaccount switch [<query>]` | Convenience alias for `codex-multiaccount auth switch` |
+| `codex-multiaccount remove ...` | Convenience alias for `codex-multiaccount auth remove` |
+| `codex-multiaccount import ...` | Convenience alias for `codex-multiaccount auth import` |
+| `codex-multiaccount clean` | Convenience alias for `codex-multiaccount auth clean` |
+| `codex-multiaccount config ...` | Convenience alias for `codex-multiaccount auth config` |
+| `codex-auth ...` | Backward-compatible shim to the bundled auth toolkit |
 
-Normal users should only need `install`, `status`, `repair`, and `uninstall`.
+Normal users should usually need `install`, `status`, `auth status`, `auth list`, and `switch`.
+
+## Auth Toolkit
+
+The bundled auth engine is the same native `codex-auth` toolchain, now shipped behind this package so users do not have to install and coordinate a second CLI manually.
+
+If a working standalone `codex-auth` install already exists on the machine, the toolkit reuses it first so existing tuned behavior and account state keep working. Fresh installs fall back to the bundled auth engine automatically.
+
+```bash
+codex-multiaccount auth status
+codex-multiaccount auth list
+codex-multiaccount switch work
+codex-multiaccount config auto --5h 10 --weekly 1
+```
+
+The compatibility alias still works too:
+
+```bash
+codex-auth status
+codex-auth list
+```
 
 ## Maintained Patch Model
 

@@ -6,6 +6,7 @@ export const DEFAULT_GITHUB_OWNER = "minanagehsalalma";
 export const DEFAULT_GITHUB_REPO = "codex-multiaccount-patcher";
 export const PRIMARY_CLI_NAME = "codex-multiaccount";
 export const LEGACY_CLI_NAME = "codex-hotpatch";
+export const AUTH_LEGACY_CLI_NAME = "codex-auth";
 export const APP_DIR_NAME = ".codex-multiaccount";
 export const LEGACY_APP_DIR_NAME = ".codex-hotpatch";
 

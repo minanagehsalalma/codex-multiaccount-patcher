@@ -6,6 +6,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { LEGACY_CLI_NAME, PRIMARY_CLI_NAME } from "./lib/constants.js";
+import { runAuthCli } from "./lib/auth-cli.js";
 import {
   commandInstall,
   commandLaunch,
@@ -23,6 +24,16 @@ Commands:
   repair
   uninstall
   launch -- [codex args...]
+  auth [codex-auth args...]
+
+Convenience aliases:
+  list
+  login [--device-auth]
+  switch [<query>]
+  remove [<query>|--all]
+  import ...
+  clean
+  config ...
 \n`);
 }
 
@@ -64,6 +75,7 @@ async function ensureProjectRoot() {
 }
 
 async function main() {
+  const rawArgv = process.argv.slice(2);
   const parsed = parseArgs(process.argv.slice(2));
   const projectRoot = await ensureProjectRoot();
   const context = {
@@ -74,6 +86,15 @@ async function main() {
     projectRoot,
     execPath: process.execPath,
   };
+
+  if (
+    parsed.command === "auth" ||
+    ["list", "login", "switch", "remove", "import", "clean", "config"].includes(parsed.command)
+  ) {
+    const authArgs = parsed.command === "auth" ? rawArgv.slice(1) : rawArgv;
+    await runAuthCli(context, authArgs);
+    return;
+  }
 
   switch (parsed.command) {
     case "install":

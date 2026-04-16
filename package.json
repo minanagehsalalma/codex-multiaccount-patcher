@@ -1,7 +1,7 @@
 {
   "name": "codex-multiaccount-patcher",
   "version": "0.1.0",
-  "description": "Persistent multi-account patcher for Codex auth hot-reload across upstream releases.",
+  "description": "All-in-one Codex multiaccount toolkit with auth switching and hot-reload patching.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
@@ -17,7 +17,9 @@
     "openai",
     "patcher",
     "multiaccount",
+    "codex-auth",
     "account-switching",
+    "auto-switch",
     "cli",
     "windows",
     "linux"
@@ -30,7 +32,11 @@
   ],
   "bin": {
     "codex-multiaccount": "./src/cli.js",
-    "codex-hotpatch": "./src/cli.js"
+    "codex-hotpatch": "./src/cli.js",
+    "codex-auth": "./src/codex-auth-shim.js"
+  },
+  "dependencies": {
+    "@loongphy/codex-auth": "^0.2.3"
   },
   "scripts": {
     "test": "node --test",
