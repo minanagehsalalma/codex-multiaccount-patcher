@@ -204,6 +204,7 @@ const TEST_SUITE_MOD_REWRITES = [
     addition: `use std::path::PathBuf;
 `,
     sentinel: "use std::path::PathBuf;",
+    optional: true,
   },
   {
     id: "suite-mod-safe-codex-home",
@@ -229,6 +230,7 @@ const TEST_SUITE_MOD_REWRITES = [
         .tempdir_in(&codex_home_root)
         .unwrap();
 `,
+    optional: true,
   },
 ];
 
@@ -322,6 +324,9 @@ function replaceUnique(text, rewrite) {
 
   const matches = countOccurrences(text, rewrite.search);
   if (matches !== 1) {
+    if (rewrite.optional && matches === 0) {
+      return { text, step: { id: rewrite.id, status: "skipped" } };
+    }
     throw new Error(
       `rewrite ${rewrite.id} expected exactly one match, found ${matches}`,
     );
@@ -340,6 +345,9 @@ function insertAfterUnique(text, rewrite) {
 
   const matches = countOccurrences(text, rewrite.anchor);
   if (matches !== 1) {
+    if (rewrite.optional && matches === 0) {
+      return { text, step: { id: rewrite.id, status: "skipped" } };
+    }
     throw new Error(
       `rewrite ${rewrite.id} expected exactly one anchor match, found ${matches}`,
     );

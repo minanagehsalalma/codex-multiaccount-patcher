@@ -151,3 +151,26 @@ test("applyTestSuiteModRewrites moves suite CODEX_HOME out of temporary roots", 
   assert.equal(second.changed, false);
   assert.equal(second.steps.every((step) => step.status === "already-applied"), true);
 });
+
+test("applyTestSuiteModRewrites skips upstream suite harnesses that no longer need tempdir relocation", () => {
+  const upstreamSnippet = `// Aggregates all former standalone integration tests as modules.
+use codex_apply_patch::CODEX_CORE_APPLY_PATCH_ARG1;
+use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
+use codex_test_binary_support::configure_test_binary_dispatch;
+
+#[ctor]
+pub static CODEX_ALIASES_TEMP_DIR: Option<TestBinaryDispatchGuard> = {
+    configure_test_binary_dispatch("codex-core-tests", |exe_name, argv1| {
+        TestBinaryDispatchMode::InstallAliases
+    })
+};
+`;
+
+  const result = applyTestSuiteModRewrites(upstreamSnippet);
+
+  assert.equal(result.changed, false);
+  assert.deepEqual(
+    result.steps.map((step) => step.status),
+    ["skipped", "skipped"],
+  );
+});
