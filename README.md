@@ -52,17 +52,17 @@ If it is you, the important facts are simple:
 
 ## Compared To Other Approaches
 
-The main alternatives today are still auth-file switchers, small wrapper scripts, or profile managers that sit next to stock Codex. They solve part of the problem. This project solves the full "switch accounts without restarting the Codex runtime" problem.
+The main alternatives today are still auth-file switchers, small wrapper scripts, or profile managers that sit next to stock Codex. They solve part of the problem. This project is aimed at the full "switch accounts and keep the Codex runtime in sync" problem.
 
-| Approach | What it is good at | Where it stops | Why this toolkit wins |
-| --- | --- | --- | --- |
-| Manual `auth.json` swapping | Maximum transparency, zero dependencies, easy to script yourself | Easy to mis-swap, easy to leave stale files around, no health check, no auto-switch, still depends on you to restart or re-enter flows cleanly | This toolkit keeps the transparency of local-file auth management but adds a managed shim, `doctor`, auto-switch integration, and fail-closed overlay matching |
-| Pure auth switchers like [`codex-auth`](https://github.com/Loongphy/codex-auth) | Fast account save/switch UX, lightweight, already familiar to many Codex users | They manage auth state, but they do not patch Codex itself to reload that state between turns | This toolkit includes that auth workflow and adds the missing runtime layer so account changes are picked up seamlessly by patched Codex |
-| Simple account-switcher scripts like [`bashar94/codex-cli-account-switcher`](https://github.com/bashar94/codex-cli-account-switcher) or similar community scripts | Minimal setup, easy to audit in one file, good for users who only want raw save/restore | Usually shell-only, manual, OS-fragile, and centered on copying auth snapshots rather than validating runtime compatibility | This toolkit is cross-platform, keeps a structured runtime home, publishes tested overlays, and refuses unsupported upstream hashes instead of assuming the script still works |
-| Profile managers / wrappers like `codexuse` or Playbooks-style switcher skills | Nicer UX, higher-level profile abstraction, sometimes device sync or quota-aware profile selection | They still sit beside stock Codex and usually stop at profile switching rather than runtime hot-reload behavior | This toolkit stays local and auditable while solving both layers together: auth management and Codex runtime reloading |
-| Load-balancer style wrappers | Good when the only goal is quota-aware account selection before a run | Usually wrapper-only, opaque about which runtime state is live, and not designed around exact upstream binary compatibility | This toolkit makes quota-aware auto-switching work with an explicitly verified runtime, plus `status` and `doctor` so the machine state is inspectable |
+| Approach | Auth switching | Auto-switch | Runtime hot-reload fix | Cross-platform | Health check / fail-closed |
+| --- | --- | --- | --- | --- | --- |
+| Manual `auth.json` swapping | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`codex-auth`](https://github.com/Loongphy/codex-auth) | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Simple switcher scripts | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Profile managers / wrappers | ✅ | sometimes | ❌ | sometimes | ❌ |
+| `codex-multiaccount-patcher` | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-If you only want "save a few auth snapshots and swap them manually," lighter tools are fine. If you want one install that keeps the auth manager and the Codex runtime in sync, this is the stronger model.
+If you only want to swap auth snapshots manually, lighter tools are fine. If you want the auth manager and patched Codex runtime to stay aligned under one install, this is the stronger model.
 
 ## Flight Path
 
