@@ -158,9 +158,9 @@ GitHub Actions stays the primary path because the repo already lives on GitHub a
 - [publish-hotpatch.yml](.github/workflows/publish-hotpatch.yml) publishes validated overlays and `manifest.json`
 - [compatibility-sweep.yml](.github/workflows/compatibility-sweep.yml) pressure-tests multiple upstream versions without publishing
 
-The compatibility sweep can run in `fast` mode for Linux-only validation or `full` mode for Linux plus Windows. The current baseline starts at Codex `0.119.0`, and the latest fully validated upstream at the time of writing is [Codex 0.120.0 validation](latest-validation-0.120.0.md).
+The compatibility sweep can run in `fast` mode for Linux-only validation or `full` mode for Linux plus Windows. The current baseline starts at Codex `0.119.0`, and the latest published validation snapshot is [Codex 0.121.0 validation](latest-validation-0.121.0.md).
 
-A deeper note on CI speed and fallback providers is in [docs/CI-STRATEGY.md](docs/CI-STRATEGY.md).
+A deeper note on CI speed and unattended maintenance is in [docs/CI-STRATEGY.md](docs/CI-STRATEGY.md).
 
 ## Maintainer Shortcuts
 
@@ -180,7 +180,8 @@ npm run versions:matrix -- --count 5 --min-version 0.119.0 --target-set fast
 | --- | --- |
 | Windows x64 | Validated live end to end |
 | Linux x64 | Supported in release + compatibility CI, still worth a real publish-install pass on Linux |
-| Provider portability | GitHub Actions is first-class, the GitLab lane is intentionally Linux-only, and secondary providers stay narrower than the release path |
+| Release automation | `auto-maintain-upstream` watches upstream Codex, skips already-published versions, and only opens a tracked issue when the deterministic path fails |
+| CI ownership | GitHub Actions is the only maintained automation surface |
 | Unsupported upstream builds | Launch fails closed until CI publishes a matching overlay |
 
 Trust files: [LICENSE](LICENSE), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CHANGELOG.md](CHANGELOG.md).
