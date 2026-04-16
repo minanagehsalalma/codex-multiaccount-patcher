@@ -26,6 +26,7 @@
   ],
   "files": [
     "src/",
+    "vendor/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"

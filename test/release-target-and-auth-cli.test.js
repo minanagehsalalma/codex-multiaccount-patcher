@@ -4,14 +4,14 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { runAuthCli } from "../src/lib/auth-cli.js";
+import { inspectAuthCli, runAuthCli } from "../src/lib/auth-cli.js";
 
-test("runAuthCli prefers bundled codex-auth entrypoint", async () => {
+test("inspectAuthCli prefers vendored codex-auth snapshot", async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-multiaccount-auth-"));
-  const bundledDir = path.join(tempRoot, "node_modules", "@loongphy", "codex-auth", "bin");
-  await fs.mkdir(bundledDir, { recursive: true });
+  const vendoredDir = path.join(tempRoot, "vendor", "codex-auth-working-snapshot", "bin");
+  await fs.mkdir(vendoredDir, { recursive: true });
   const captureFile = path.join(tempRoot, "capture.txt");
-  const entrypoint = path.join(bundledDir, "codex-auth.js");
+  const entrypoint = path.join(vendoredDir, "codex-auth.js");
   await fs.writeFile(
     entrypoint,
     [
@@ -24,12 +24,15 @@ test("runAuthCli prefers bundled codex-auth entrypoint", async () => {
   const context = {
     cwd: tempRoot,
     homeDir: tempRoot,
-    platform: process.platform,
-    arch: process.arch,
+    platform: "win32",
+    arch: "x64",
     projectRoot: tempRoot,
     execPath: process.execPath,
-    preferBundledAuth: true,
   };
+
+  const inspection = await inspectAuthCli(context);
+  assert.equal(inspection.source, "vendored-working-snapshot");
+  assert.equal(inspection.entrypoint, entrypoint);
 
   const previousExit = process.exit;
   try {

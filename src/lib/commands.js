@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 
 import { appDirs, defaultManifestUrl, PRIMARY_CLI_NAME } from "./constants.js";
+import { captureAuthCli, inspectAuthCli } from "./auth-cli.js";
 import { discoverCodexInstall, autoDetectOverlayPath } from "./codex-discovery.js";
 import {
   createLocalManifestRecord,
@@ -187,6 +188,80 @@ export async function commandStatus(context) {
     `managed-bin: ${state.managedBinDir}`,
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
+}
+
+export async function commandDoctor(context) {
+  const dirs = appDirs(context.homeDir);
+  const { state } = await loadInstalledRuntime(dirs);
+  const auth = await inspectAuthCli(context);
+
+  const lines = [
+    `toolkit-home: ${dirs.rootDir}`,
+    `codex-home: ${auth.codexHome}`,
+  ];
+
+  let patchHealthy = false;
+  if (!state) {
+    lines.push("patch: not installed");
+  } else {
+    const manifestPresent = await pathExists(state.manifestPath);
+    const overlayPresent = await pathExists(state.overlay.managedPath);
+    let supported = false;
+    let upstreamPath = state.upstream.vendorBinaryPath;
+    try {
+      const upstream = await discoverCurrentUpstream(context, state);
+      upstreamPath = upstream.vendorBinaryPath;
+      const upstreamSha256 = await sha256File(upstream.vendorBinaryPath);
+      const manifest = await loadCachedManifest(state.manifestPath);
+      const { record } = await resolveRecord(context, dirs, state, manifest, upstream, upstreamSha256);
+      supported = Boolean(record);
+      patchHealthy = manifestPresent && overlayPresent && supported;
+      lines.push("patch: installed");
+      lines.push(`patch-upstream: ${upstreamPath}`);
+      lines.push(`patch-overlay: ${state.overlay.managedPath}`);
+      lines.push(`patch-manifest: ${manifestPresent ? "present" : "missing"}`);
+      lines.push(`patch-overlay-present: ${overlayPresent ? "yes" : "no"}`);
+      lines.push(`patch-supported: ${supported ? "yes" : "no"}`);
+    } catch (error) {
+      lines.push("patch: error");
+      lines.push(`patch-upstream: ${upstreamPath}`);
+      lines.push(`patch-error: ${error.message}`);
+    }
+  }
+
+  const accountsDirExists = await pathExists(auth.accountsDir);
+  const registryExists = await pathExists(auth.registryPath);
+  const activeAuthExists = await pathExists(auth.activeAuthPath);
+  lines.push(`auth-source: ${auth.source}`);
+  lines.push(`auth-entrypoint: ${auth.entrypoint}`);
+  lines.push(`auth-accounts-dir: ${auth.accountsDir}`);
+  lines.push(`auth-accounts-present: ${accountsDirExists ? "yes" : "no"}`);
+  lines.push(`auth-registry: ${registryExists ? "present" : "missing"}`);
+  lines.push(`auth-active-auth: ${activeAuthExists ? "present" : "missing"}`);
+
+  let authHealthy = false;
+  try {
+    const authStatus = await captureAuthCli(context, ["status"]);
+    authHealthy = authStatus.code === 0 && registryExists && activeAuthExists;
+    lines.push(`auth-status-exit: ${authStatus.code}`);
+    for (const line of authStatus.stdout.split(/\r?\n/).filter(Boolean)) {
+      lines.push(`auth-status-${line}`);
+    }
+    if (authStatus.stderr.trim()) {
+      for (const line of authStatus.stderr.split(/\r?\n/).filter(Boolean)) {
+        lines.push(`auth-stderr-${line}`);
+      }
+    }
+  } catch (error) {
+    lines.push("auth-status-exit: error");
+    lines.push(`auth-error: ${error.message}`);
+  }
+
+  const overall = patchHealthy && authHealthy ? "ok" : state || authHealthy ? "warn" : "fail";
+  process.stdout.write(`doctor: ${overall}\n${lines.join("\n")}\n`);
+  if (overall !== "ok") {
+    process.exitCode = 1;
+  }
 }
 
 export async function commandRepair(context) {

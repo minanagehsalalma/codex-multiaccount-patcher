@@ -1,0 +1,38 @@
+{
+  "name": "@loongphy/codex-auth",
+  "version": "0.2.2",
+  "description": "CLI for switching Codex accounts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Loongphy/codex-auth"
+  },
+  "homepage": "https://github.com/Loongphy/codex-auth",
+  "bugs": {
+    "url": "https://github.com/Loongphy/codex-auth/issues"
+  },
+  "bin": {
+    "codex-auth": "bin/codex-auth.js"
+  },
+  "files": [
+    "bin/",
+    "LICENSE",
+    "README.md"
+  ],
+  "optionalDependencies": {
+    "@loongphy/codex-auth-linux-x64": "0.2.2",
+    "@loongphy/codex-auth-darwin-x64": "0.2.2",
+    "@loongphy/codex-auth-darwin-arm64": "0.2.2",
+    "@loongphy/codex-auth-win32-x64": "0.2.2"
+  },
+  "scripts": {
+    "check:versions": "node scripts/npm/check-versions.mjs",
+    "stage:npm": "node scripts/npm/stage-packages.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

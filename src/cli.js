@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { LEGACY_CLI_NAME, PRIMARY_CLI_NAME } from "./lib/constants.js";
 import { runAuthCli } from "./lib/auth-cli.js";
 import {
+  commandDoctor,
   commandInstall,
   commandLaunch,
   commandRepair,
@@ -21,6 +22,7 @@ function usage() {
 Commands:
   install [--overlay-path <path>] [--manifest <file-or-url>] [--path <upstream-binary>] [--force]
   status
+  doctor
   repair
   uninstall
   launch -- [codex args...]
@@ -102,6 +104,9 @@ async function main() {
       return;
     case "status":
       await commandStatus(context);
+      return;
+    case "doctor":
+      await commandDoctor(context);
       return;
     case "repair":
       await commandRepair(context);

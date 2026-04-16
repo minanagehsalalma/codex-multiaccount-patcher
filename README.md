@@ -51,6 +51,7 @@ codex-multiaccount install
 
 ```bash
 codex-multiaccount status
+codex-multiaccount doctor
 ```
 
 5. Check the bundled auth toolkit:
@@ -61,6 +62,17 @@ codex-multiaccount auth list
 ```
 
 After that, plain `codex` should route through the managed shim automatically. `codex-auth` is also installed as a compatibility alias, and the legacy alias `codex-hotpatch` still works during the transition.
+
+## Toolkit Home
+
+The toolkit has two runtime roots:
+
+- `~/.codex-multiaccount`
+  This is the toolkit-managed home for shims, overlays, manifests, and patch runtime state.
+- `~/.codex`
+  This remains the upstream Codex home, and it is still the live source of truth for `auth.json`, `accounts/`, session rollouts, and the auth registry that `codex-auth` manages.
+
+`codex-multiaccount doctor` checks both homes together so users do not have to guess which side is broken.
 
 ## What Happens When You Type `codex`
 
@@ -141,6 +153,7 @@ The green path is now zero-touch: detect the latest upstream Codex release, skip
 | --- | --- |
 | `codex-multiaccount install [--overlay-path <path>] [--manifest <file-or-url>] [--path <upstream-binary>] [--force]` | Install shims, discover upstream Codex, and materialize the matching overlay |
 | `codex-multiaccount status` | Show upstream hash, active overlay, manifest source, and install health |
+| `codex-multiaccount doctor` | Check both the patch runtime and auth runtime in one report |
 | `codex-multiaccount repair` | Re-resolve the manifest and refresh the managed runtime |
 | `codex-multiaccount uninstall` | Remove the managed runtime and restore normal `codex` launch behavior |
 | `codex-multiaccount launch -- [codex args...]` | Internal entrypoint used by the managed shims |
@@ -154,13 +167,13 @@ The green path is now zero-touch: detect the latest upstream Codex release, skip
 | `codex-multiaccount config ...` | Convenience alias for `codex-multiaccount auth config` |
 | `codex-auth ...` | Backward-compatible shim to the bundled auth toolkit |
 
-Normal users should usually need `install`, `status`, `auth status`, `auth list`, and `switch`.
+Normal users should usually need `install`, `status`, `doctor`, `auth status`, `auth list`, and `switch`.
 
 ## Auth Toolkit
 
 The bundled auth engine is the same native `codex-auth` toolchain, now shipped behind this package so users do not have to install and coordinate a second CLI manually.
 
-If a working standalone `codex-auth` install already exists on the machine, the toolkit reuses it first so existing tuned behavior and account state keep working. Fresh installs fall back to the bundled auth engine automatically.
+On Windows, the toolkit now prefers a vendored snapshot of the known-good working `codex-auth` machine install before falling back to any other copy. Existing standalone installs still work as a secondary fallback, and fresh installs can still fall back to the npm-bundled auth engine when needed.
 
 ```bash
 codex-multiaccount auth status
