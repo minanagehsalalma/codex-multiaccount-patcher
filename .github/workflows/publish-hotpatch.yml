@@ -111,6 +111,11 @@ jobs:
             artifact_suffix: linux-x64
             executable_name: codex
     runs-on: ${{ matrix.os }}
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -124,6 +129,7 @@ jobs:
           ref: ${{ needs.detect-upstream.outputs.codex_ref }}
           path: upstream
       - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: publish-${{ matrix.platform }}-${{ needs.detect-upstream.outputs.codex_version }}
@@ -253,5 +259,4 @@ jobs:
           files: |
             dist/release/manifest.json
             dist/overlays/*
-
 

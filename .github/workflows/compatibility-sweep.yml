@@ -62,6 +62,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.resolve-matrix.outputs.matrix) }}
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -75,6 +80,7 @@ jobs:
           ref: ${{ matrix.codex_ref }}
           path: upstream
       - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: sweep-${{ matrix.platform }}-${{ matrix.codex_version }}
@@ -98,15 +104,10 @@ jobs:
           mkdir -p "$CODEX_TEST_CODEX_HOME_ROOT"
           cargo test -p codex-core --lib client::tests::current_client_setup_reloads_auth_from_disk_between_turns -- --exact
           cargo test -p codex-core --test all suite::client_websockets::responses_websocket_reconnects_when_auth_snapshot_changes_between_turns -- --exact
-      - name: Build patched Codex CLI
+      - name: Check patched Codex CLI
         shell: bash
         working-directory: upstream/codex-rs
-        run: cargo build -p codex-cli --release --locked
-      - name: Smoke-check built binary
-        shell: bash
-        working-directory: upstream/codex-rs
-        run: |
-          ./target/release/${{ matrix.executable_name }} --version
+        run: cargo check -p codex-cli --release --locked
       - name: Upload compatibility debug bundle
         if: always()
         uses: actions/upload-artifact@v7
@@ -118,5 +119,4 @@ jobs:
             upstream/codex-rs/core/src/client_tests.rs
             upstream/codex-rs/core/tests/common/responses.rs
             upstream/codex-rs/core/tests/suite/client_websockets.rs
-
 

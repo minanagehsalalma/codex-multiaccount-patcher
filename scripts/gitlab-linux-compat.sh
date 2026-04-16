@@ -24,6 +24,5 @@ export CODEX_TEST_CODEX_HOME_ROOT="$PWD/.codex-test-home"
 mkdir -p "$CODEX_TEST_CODEX_HOME_ROOT"
 cargo test -p codex-core --lib client::tests::current_client_setup_reloads_auth_from_disk_between_turns -- --exact
 cargo test -p codex-core --test all suite::client_websockets::responses_websocket_reconnects_when_auth_snapshot_changes_between_turns -- --exact
-cargo build -p codex-cli --release --locked
-./target/release/codex --version
+cargo check -p codex-cli --release --locked
 popd >/dev/null

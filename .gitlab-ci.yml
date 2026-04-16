@@ -8,6 +8,11 @@ variables:
   DEBIAN_FRONTEND: noninteractive
   CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
   CARGO_TARGET_DIR: "$CI_PROJECT_DIR/.cargo-target"
+  SCCACHE_DIR: "$CI_PROJECT_DIR/.sccache"
+  SCCACHE_CACHE_SIZE: "2G"
+  RUSTC_WRAPPER: sccache
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
   NODE_VERSION: "22.15.0"
 
 cache:
@@ -18,6 +23,7 @@ cache:
   paths:
     - node_modules/
     - .node/
+    - .sccache/
     - .cargo/registry/
     - .cargo/git/
     - .cargo-target/
@@ -42,6 +48,10 @@ linux-compatibility:
         mkdir -p "$CI_PROJECT_DIR/.node"
         curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz
         tar -xJf /tmp/node.tar.xz --strip-components=1 -C "$CI_PROJECT_DIR/.node"
+      fi
+    - |
+      if ! command -v sccache >/dev/null; then
+        cargo install sccache --locked
       fi
     - npm ci
   script:
