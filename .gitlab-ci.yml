@@ -1,0 +1,32 @@
+stages:
+  - compatibility
+
+default:
+  image: ubuntu:24.04
+
+variables:
+  DEBIAN_FRONTEND: noninteractive
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - node_modules/
+    - .cargo/registry/
+    - .cargo/git/
+
+linux-compatibility:
+  stage: compatibility
+  before_script:
+    - apt-get update -y
+    - apt-get install -y curl ca-certificates git build-essential pkg-config libcap-dev
+    - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    - apt-get install -y nodejs
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - npm ci
+  script:
+    - chmod +x ./scripts/gitlab-linux-compat.sh
+    - ./scripts/gitlab-linux-compat.sh

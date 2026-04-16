@@ -156,7 +156,7 @@ npm run versions:matrix -- --count 5 --min-version 0.119.0 --target-set fast
 | --- | --- |
 | Windows x64 | Validated live end to end |
 | Linux x64 | Supported in release + compatibility CI, still worth a real publish-install pass on Linux |
-| Provider portability | GitHub Actions is first-class, Cirrus is the most credible fallback, GitLab is possible but less attractive for a GitHub-native repo |
+| Provider portability | GitHub Actions is first-class, the GitLab lane is intentionally Linux-only, and secondary providers stay narrower than the release path |
 | Unsupported upstream builds | Launch fails closed until CI publishes a matching overlay |
 
 Trust files: [LICENSE](LICENSE), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CHANGELOG.md](CHANGELOG.md).

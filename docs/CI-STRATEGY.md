@@ -23,17 +23,13 @@ This is the practical answer to long Rust phases: make repeated builds cheaper a
 
 ## Why Not Default To Another Provider
 
-### Cirrus CI
-
-Cirrus is the strongest fallback if GitHub Actions queue time ever becomes the real bottleneck. It integrates well with GitHub-hosted source, supports Windows and Linux, and has solid caching primitives. It is the only alternative worth serious consideration for this project.
-
 ### GitLab CI
 
 GitLab CI is viable, but this repo is GitHub-native and the release artifacts already publish back to GitHub. That means mirroring, runner setup, or extra operational glue just to replace a workflow engine that already has the right OS support.
 
 ### Bottom line
 
-If the pain is compile time, better caching on GitHub Actions is the first fix. If the pain becomes queue time or GitHub-hosted runner limits, Cirrus is the next thing to trial. GitLab is further down the list.
+If the pain is compile time, better caching on GitHub Actions is the first fix. If the pain becomes queue time or GitHub-hosted runner limits, the next fallback should be introduced intentionally and kept narrower than the primary release lane.
 
 ## Practical Tuning Order
 
@@ -42,9 +38,9 @@ If the pain is compile time, better caching on GitHub Actions is the first fix. 
 3. Fail before publish when manifest metadata is wrong.
 4. Only add a second CI provider if GitHub-hosted runner time, not compile work, becomes the real limit.
 
-## Cirrus Fallback
+## GitLab Fallback
 
-A Linux-only Cirrus fallback lane now lives in [`.cirrus.yml`](../.cirrus.yml). It is intentionally scoped:
+A Linux-only GitLab fallback lane now lives in [`.gitlab-ci.yml`](../.gitlab-ci.yml). It is intentionally scoped:
 - validate the maintained patch against the latest upstream Codex on Linux
 - run the two focused regressions
 - build the patched CLI once
