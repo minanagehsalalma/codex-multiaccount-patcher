@@ -16,6 +16,40 @@
 
 `codex-multiaccount-patcher` is now a single toolkit: it keeps a patched `codex` binary in front of the upstream install and bundles the `codex-auth` account manager behind the same install. The point is still narrow and practical: switch accounts cleanly, auto-switch when thresholds are hit, and let Codex pick up auth changes between turns without making you rebuild locally or restart the CLI.
 
+## Why This Exists
+
+OpenAI Codex still behaves like a single-account CLI in practice. If you rotate between personal, work, or quota-spillover accounts, the official flow is still mostly `login`, overwrite auth state, and restart the session. This toolkit exists to close that gap with the smallest surface area possible:
+
+- keep upstream Codex installed normally
+- keep account state in the same `~/.codex` home Codex already uses
+- put a managed shim in front of `codex`
+- fail closed when the upstream binary hash is unknown instead of guessing
+
+That is the whole bet. It is not trying to be a fork of Codex, a custom backend, or a traffic proxy.
+
+## Trust Model
+
+| Concern | This toolkit's contract |
+| --- | --- |
+| Credentials | It does not ask for your OpenAI password, proxy your prompts, or upload `auth.json` / `accounts/` anywhere. Auth switching works by managing the same local Codex auth files you already have under `~/.codex`. |
+| Filesystem writes | It writes only to `~/.codex-multiaccount` for shims, overlays, manifests, and state. It reads `~/.codex` because that is where Codex auth already lives. It does not patch the upstream vendor binary in place. |
+| Network access | Network use is narrow and explicit: fetch the configured manifest and download published overlays from GitHub Releases, or pull a newer toolkit package when you run `upgrade`. It does not sit in the middle of Codex API traffic. |
+| Updates | The managed runtime can refresh its manifest/overlay state automatically. The toolkit package does not silently self-update; users must reinstall, run `codex-multiaccount upgrade`, or `self-install` from a checkout. |
+| Breakage | Overlay selection is hash-matched. If the installed upstream Codex binary is unknown, launch fails closed instead of trying a near match. |
+| Reversibility | `codex-multiaccount uninstall` removes the managed runtime and restores normal `codex` launch behavior. Your upstream Codex install and `~/.codex` auth data stay yours. |
+
+## Before You Install
+
+This project is meant for people who are comfortable auditing what a CLI touches on their own machine. If that is not you, wait for a better official multi-account workflow in Codex itself.
+
+If it is you, the important facts are simple:
+
+- it does not modify upstream Codex in place
+- it does not invent a custom auth store
+- it does not silently apply overlays for unknown upstream binaries
+- it does not hide uninstall behind manual cleanup
+- it is easiest to reason about on a personal machine, not a shared workstation
+
 ## Flight Path
 
 ```mermaid
@@ -94,6 +128,8 @@ The toolkit has two runtime roots:
   This remains the upstream Codex home, and it is still the live source of truth for `auth.json`, `accounts/`, session rollouts, and the auth registry that `codex-auth` manages.
 
 `codex-multiaccount doctor` checks both homes together so users do not have to guess which side is broken.
+
+If you are evaluating the tool skeptically, `doctor` is the first command to run after install because it shows both the patch runtime and auth runtime in one place, including whether auto-switch is actually enabled.
 
 ## What Happens When You Type `codex`
 
