@@ -1,9 +1,9 @@
-<h1 align="center">codex-multiaccount-patcher</h1>
-<p align="center">
-  <img width="240" alt="Codex multiaccount patcher mascot" src="https://github.com/user-attachments/assets/8ee532dc-9cf2-4e30-ae1c-02d4261c28a8" />
-</p>
-
 <div align="center">
+  <p>
+    <img width="240" alt="Codex multiaccount patcher mascot" src="https://github.com/user-attachments/assets/8ee532dc-9cf2-4e30-ae1c-02d4261c28a8" />
+  </p>
+  <h1>codex-multiaccount-patcher</h1>
+  <p><strong>Patch Codex once, keep account switching seamless across turns.</strong></p>
   <p>
     <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/releases/latest"><img alt="Latest Release" src="https://img.shields.io/github/v/release/minanagehsalalma/codex-multiaccount-patcher?display_name=tag&label=release"></a>
     <a href="https://github.com/minanagehsalalma/codex-multiaccount-patcher/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-4b5563"></a>
