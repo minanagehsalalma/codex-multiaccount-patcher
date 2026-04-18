@@ -20,6 +20,7 @@ The workflows now lean on Rust-specific caching, unattended orchestration, and r
 - release publishing validates every manifest URL before a release is created
 - the compatibility sweep stays separate from publishing so version coverage does not clutter releases
 - `auto-maintain-upstream` detects the latest upstream release, skips work if the matching patch release already exists, and opens a tracked failure issue only when the deterministic path breaks
+- the maintained patch includes compatibility rewrites for upstream test harnesses that still root `CODEX_HOME` under temporary directories on hosts where helper setup rejects temp-root installs
 
 This is the practical answer to long Rust phases: make repeated builds cheaper and make bad publishes impossible.
 

@@ -41,6 +41,8 @@ The fix is maintained as a patch program:
 
 That is intentionally more resilient than carrying one giant line-based patch forward forever.
 
+The maintained patch also carries a small host-compatibility responsibility for upstream test harnesses. Some upstream release-mode harnesses create `CODEX_HOME` under the active temporary directory, but helper setup can reject that location on certain machines. When upstream still has that layout, the maintained patch rewrites the harness to create test `CODEX_HOME` roots outside the temp root instead of leaving local validation to fail for machine-specific reasons. The focused tests in `test/maintained-patch.test.js` cover that behavior so it stays intentional and reviewable.
+
 ## Release Model
 
 The publish workflow:
