@@ -7,6 +7,21 @@ on:
         description: Upstream Codex version to package
         required: false
         type: string
+      upstream_repo:
+        description: Upstream GitHub repo to detect and checkout
+        required: false
+        type: string
+        default: openai/codex
+      upstream_source:
+        description: Upstream binary source mode
+        required: false
+        type: string
+        default: npm
+      include_prereleases:
+        description: Include prereleases when auto-detecting the upstream release
+        required: false
+        type: boolean
+        default: false
       release_tag:
         description: Release tag for the hotpatch assets
         required: false
@@ -16,6 +31,23 @@ on:
       codex_version:
         description: Upstream Codex version to package
         required: true
+      upstream_repo:
+        description: Upstream GitHub repo to detect and checkout
+        required: false
+        default: openai/codex
+      upstream_source:
+        description: Upstream binary source mode
+        required: false
+        default: npm
+        type: choice
+        options:
+          - npm
+          - github-release
+      include_prereleases:
+        description: Include prereleases when auto-detecting the upstream release
+        required: false
+        default: false
+        type: boolean
       release_tag:
         description: Release tag for the hotpatch assets
         required: true
@@ -34,6 +66,8 @@ jobs:
       codex_version: ${{ steps.detect.outputs.codex_version }}
       codex_ref: ${{ steps.detect.outputs.codex_ref }}
       release_tag: ${{ steps.detect.outputs.release_tag }}
+      upstream_repo: ${{ steps.detect.outputs.upstream_repo }}
+      upstream_source: ${{ steps.detect.outputs.upstream_source }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -45,13 +79,18 @@ jobs:
         shell: bash
         run: |
           TARGET_INPUT="${{ inputs.codex_version }}"
+          UPSTREAM_REPO="${{ inputs.upstream_repo }}"
+          UPSTREAM_SOURCE="${{ inputs.upstream_source }}"
+          INCLUDE_PRERELEASES="${{ inputs.include_prereleases }}"
           if [ -z "$TARGET_INPUT" ]; then
-            TARGET_INPUT="$(node ./scripts/detect-upstream-release.mjs --field tagName)"
+            TARGET_INPUT="$(node ./scripts/detect-upstream-release.mjs --repo "$UPSTREAM_REPO" --include-prereleases "$INCLUDE_PRERELEASES" --field tagName)"
           fi
           REF="$(node ./scripts/resolve-release-target.mjs --version "$TARGET_INPUT" --field codexRef)"
           VERSION="$(node ./scripts/resolve-release-target.mjs --version "$TARGET_INPUT" --field codexVersion)"
           echo "codex_ref=$REF" >> "$GITHUB_OUTPUT"
           echo "codex_version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "upstream_repo=$UPSTREAM_REPO" >> "$GITHUB_OUTPUT"
+          echo "upstream_source=$UPSTREAM_SOURCE" >> "$GITHUB_OUTPUT"
           RELEASE_TAG="$(node ./scripts/resolve-release-target.mjs --version "$TARGET_INPUT" --release-tag "${{ inputs.release_tag }}" --field releaseTag)"
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
@@ -84,7 +123,10 @@ jobs:
         run: |
           mkdir -p dist/upstream
           node ./scripts/fetch-upstream-binary.mjs \
+            --source "${{ needs.detect-upstream.outputs.upstream_source }}" \
+            --repo "${{ needs.detect-upstream.outputs.upstream_repo }}" \
             --codex-version "${{ needs.detect-upstream.outputs.codex_version }}" \
+            --tag "${{ needs.detect-upstream.outputs.codex_ref }}" \
             --platform "${{ matrix.platform }}" \
             --arch "${{ matrix.arch }}" \
             --output "dist/upstream/${{ matrix.executable_name }}"
@@ -124,7 +166,7 @@ jobs:
       - run: npm ci
       - uses: actions/checkout@v6
         with:
-          repository: openai/codex
+          repository: ${{ needs.detect-upstream.outputs.upstream_repo }}
           ref: ${{ needs.detect-upstream.outputs.codex_ref }}
           path: upstream
       - uses: dtolnay/rust-toolchain@stable

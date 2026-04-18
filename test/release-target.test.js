@@ -27,3 +27,12 @@ test("resolveExplicitReleaseTarget preserves tagged refs and custom release tags
 test("buildFailureIssueTitle uses normalized versions", () => {
   assert.equal(buildFailureIssueTitle("rust-v0.121.0"), "Support upstream Codex 0.121.0");
 });
+
+test("resolveExplicitReleaseTarget preserves non-semver fork tags", () => {
+  assert.deepEqual(resolveExplicitReleaseTarget("remote-compact-timeout-recovery-ea2504064"), {
+    codexRef: "remote-compact-timeout-recovery-ea2504064",
+    codexVersion: "remote-compact-timeout-recovery-ea2504064",
+    releaseTag: "multiaccount-patcher-remote-compact-timeout-recovery-ea2504064",
+    issueTitle: "Support upstream Codex remote-compact-timeout-recovery-ea2504064",
+  });
+});

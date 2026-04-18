@@ -7,6 +7,24 @@ on:
         description: Optional upstream Codex version or tag to target
         required: false
         type: string
+      upstream_repo:
+        description: Upstream GitHub repo to detect and checkout
+        required: false
+        default: openai/codex
+        type: string
+      upstream_source:
+        description: Upstream binary source mode
+        required: false
+        default: npm
+        type: choice
+        options:
+          - npm
+          - github-release
+      include_prereleases:
+        description: Include prereleases when auto-detecting the upstream release
+        required: false
+        default: false
+        type: boolean
       release_tag:
         description: Optional patch release tag override
         required: false
@@ -38,6 +56,9 @@ jobs:
       assign_copilot: ${{ steps.resolve.outputs.assign_copilot }}
       release_exists: ${{ steps.release.outputs.release_exists }}
       should_publish: ${{ steps.release.outputs.should_publish }}
+      upstream_repo: ${{ steps.resolve.outputs.upstream_repo }}
+      upstream_source: ${{ steps.resolve.outputs.upstream_source }}
+      include_prereleases: ${{ steps.resolve.outputs.include_prereleases }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -49,8 +70,11 @@ jobs:
         shell: bash
         run: |
           TARGET_INPUT="${{ inputs.codex_version }}"
+          UPSTREAM_REPO="${{ inputs.upstream_repo || 'openai/codex' }}"
+          UPSTREAM_SOURCE="${{ inputs.upstream_source || 'npm' }}"
+          INCLUDE_PRERELEASES="${{ inputs.include_prereleases || false }}"
           if [ -z "$TARGET_INPUT" ]; then
-            TARGET_INPUT="$(node ./scripts/detect-upstream-release.mjs --field tagName)"
+            TARGET_INPUT="$(node ./scripts/detect-upstream-release.mjs --repo "$UPSTREAM_REPO" --include-prereleases "$INCLUDE_PRERELEASES" --field tagName)"
           fi
           REF="$(node ./scripts/resolve-release-target.mjs --version "$TARGET_INPUT" --field codexRef)"
           VERSION="$(node ./scripts/resolve-release-target.mjs --version "$TARGET_INPUT" --field codexVersion)"
@@ -66,6 +90,9 @@ jobs:
             echo "release_tag=$RELEASE_TAG"
             echo "issue_title=$ISSUE_TITLE"
             echo "assign_copilot=$ASSIGN_COPILOT"
+            echo "upstream_repo=$UPSTREAM_REPO"
+            echo "upstream_source=$UPSTREAM_SOURCE"
+            echo "include_prereleases=$INCLUDE_PRERELEASES"
           } >> "$GITHUB_OUTPUT"
       - id: release
         uses: actions/github-script@v8
@@ -96,6 +123,9 @@ jobs:
     uses: ./.github/workflows/publish-hotpatch.yml
     with:
       codex_version: ${{ needs.detect-target.outputs.codex_version }}
+      upstream_repo: ${{ needs.detect-target.outputs.upstream_repo }}
+      upstream_source: ${{ needs.detect-target.outputs.upstream_source }}
+      include_prereleases: ${{ needs.detect-target.outputs.include_prereleases == 'true' }}
       release_tag: ${{ needs.detect-target.outputs.release_tag }}
     secrets: inherit
 

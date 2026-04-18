@@ -1,4 +1,5 @@
 import { normalizeVersionTag } from "./upstream-versions.js";
+import { resolveCodexRef, sanitizeReleaseTagComponent } from "./upstream-source.js";
 
 export function resolveExplicitReleaseTarget(value, { releaseTag = null } = {}) {
   const raw = `${value ?? ""}`.trim();
@@ -7,15 +8,13 @@ export function resolveExplicitReleaseTarget(value, { releaseTag = null } = {}) 
   }
 
   const codexVersion = normalizeVersionTag(raw);
-  let codexRef = raw;
-  if (!/^rust-v/i.test(codexRef) && !/^v/i.test(codexRef)) {
-    codexRef = `rust-v${codexRef}`;
-  }
+  const codexRef = resolveCodexRef(raw);
+  const defaultReleaseComponent = sanitizeReleaseTagComponent(codexVersion);
 
   return {
     codexRef,
     codexVersion,
-    releaseTag: releaseTag?.trim() ? releaseTag.trim() : `multiaccount-patcher-${codexVersion}`,
+    releaseTag: releaseTag?.trim() ? releaseTag.trim() : `multiaccount-patcher-${defaultReleaseComponent}`,
     issueTitle: buildFailureIssueTitle(codexVersion),
   };
 }

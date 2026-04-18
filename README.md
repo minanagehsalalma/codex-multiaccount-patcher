@@ -132,6 +132,8 @@ codex-multiaccount self-install
 
 Published installs do not auto-refresh every time the repo changes. The toolkit upgrades the managed Codex runtime automatically, but the toolkit package itself only changes when you reinstall or run `upgrade`.
 
+The default maintenance lane still targets the normal `openai/codex` semver/npm shape. Manual publish runs can now also target forked GitHub release assets, including prereleases with non-semver tags, by passing `upstream_repo`, `upstream_source=github-release`, and `include_prereleases=true` into the workflow dispatch form.
+
 ## Toolkit Home
 
 The toolkit has two runtime roots:
@@ -201,6 +203,8 @@ flowchart LR
 ```
 
 The automation is designed to stop before publishing when the patch program drifts, a regression breaks, or the manifest points at the wrong repo/tag. That last check exists specifically to prevent the kind of release cleanup that makes a public release page look sloppy.
+
+That intake path is no longer limited to the official npm-backed release layout. The publish pipeline can also fetch upstream binaries directly from GitHub release assets when a fork ships a release tag like `remote-compact-timeout-recovery-ea2504064` instead of a normal `rust-v0.x.y` semver tag.
 
 ## Unattended Maintenance Loop
 
