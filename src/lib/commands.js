@@ -18,7 +18,7 @@ import { ensureManagedBinOnUserPath, removeManagedBinFromUserPath } from "./path
 import { deleteState, loadState, saveState } from "./state.js";
 import { removeManagedShims, writeManagedShims } from "./shims.js";
 import { installCurrentCheckout, installPublishedToolkit } from "./toolkit-install.js";
-import { ensureDir, pathExists, readJson, sha256File, writeJson } from "./util.js";
+import { ensureDir, equalsPath, pathExists, readJson, sha256File, writeJson } from "./util.js";
 
 function splitWindowsPathList(value) {
   return String(value ?? "")
@@ -73,6 +73,7 @@ export async function commandInstall(context, options) {
   await ensureDir(dirs.rootDir);
   await ensureDir(dirs.overlaysDir);
   await ensureDir(dirs.manifestsDir);
+  const { state: installedState } = await loadInstalledRuntime(dirs);
 
   const explicitUpstreamPath = resolveLocalPathOption(context, options.path);
   const upstream = await discoverCodexInstall(context, explicitUpstreamPath);
@@ -101,6 +102,12 @@ export async function commandInstall(context, options) {
     }
   }
 
+  if (!activeRecord && !overlaySourcePath) {
+    activeRecord = await synthesizeInstalledOverlayRecord(context, installedState, upstream, upstreamSha256);
+    if (activeRecord) {
+      manifest = mergeManifestRecordSet(manifest, activeRecord);
+    }
+  }
   if (!activeRecord && !overlaySourcePath) {
     overlaySourcePath = await autoDetectOverlayPath(context, upstream.vendorBinaryPath);
   }
@@ -464,13 +471,25 @@ async function resolveRecord(context, dirs, state, cachedManifest, upstream, ups
       }
     }
   }
-  if (!manifest) {
-    return { manifestRecords: [], record: null };
+  let manifestRecords = manifest?.records ?? [];
+  let record = manifest ? findManifestRecord(manifest, upstreamSha256, context.platform, context.arch) : null;
+  let recoveredFromInstalledOverlay = false;
+  if (!record) {
+    const recoveredRecord = await synthesizeInstalledOverlayRecord(context, state, upstream, upstreamSha256);
+    if (recoveredRecord) {
+      record = recoveredRecord;
+      manifestRecords = mergeManifestRecordSet(manifest, recoveredRecord).records;
+      recoveredFromInstalledOverlay = true;
+    }
   }
-  const record = findManifestRecord(manifest, upstreamSha256, context.platform, context.arch);
-  const manifestRecords = manifest.records;
-  if (state.manifestSource) {
+  if (state.manifestSource || recoveredFromInstalledOverlay) {
     await saveManifest(dirs.manifestPath, manifestRecords);
+  }
+  if (recoveredFromInstalledOverlay) {
+    await updateStateForRecord(dirs, state, upstream, upstreamSha256, record, {
+      managedOverlayPath: record.managedOverlayPath,
+      overlaySha256: record.overlaySha256 ?? record.overlaySourceSha256 ?? state.overlay?.sourceSha256 ?? null,
+    });
   }
   return { manifestRecords, record };
 }
@@ -571,6 +590,62 @@ async function discoverCurrentUpstream(context, state) {
     }
     throw error;
   }
+}
+
+async function synthesizeInstalledOverlayRecord(context, state, upstream, upstreamSha256) {
+  if (!state?.overlay?.managedPath) {
+    return null;
+  }
+  if (!(await pathExists(state.overlay.managedPath))) {
+    return null;
+  }
+  if (!shouldReuseInstalledOverlay(state, upstream)) {
+    return null;
+  }
+
+  const overlaySourceSha256 = state.overlay.sourceSha256 ?? await sha256File(state.overlay.managedPath);
+  return createLocalManifestRecord({
+    codexVersion: upstream.version ?? state.upstream?.version ?? "unknown",
+    platform: context.platform,
+    arch: context.arch,
+    upstreamBinaryPath: upstream.vendorBinaryPath,
+    upstreamSha256,
+    overlaySourcePath: state.overlay.managedPath,
+    overlaySourceSha256,
+    managedOverlayPath: state.overlay.managedPath,
+  });
+}
+
+function shouldReuseInstalledOverlay(state, upstream) {
+  const previousVersion = state?.upstream?.version ?? null;
+  const currentVersion = upstream?.version ?? null;
+  if (previousVersion && currentVersion) {
+    return previousVersion === currentVersion;
+  }
+  return Boolean(
+    state?.upstream?.vendorBinaryPath &&
+    upstream?.vendorBinaryPath &&
+    equalsPath(state.upstream.vendorBinaryPath, upstream.vendorBinaryPath),
+  );
+}
+
+function mergeManifestRecordSet(manifest, record) {
+  const records = manifest?.records ?? [];
+  const nextRecords = [
+    record,
+    ...records.filter(
+      (item) =>
+        !(
+          item.upstreamSha256 === record.upstreamSha256 &&
+          item.platform === record.platform &&
+          item.arch === record.arch
+        ),
+    ),
+  ];
+  return {
+    schemaVersion: manifest?.schemaVersion ?? 1,
+    records: nextRecords,
+  };
 }
 
 function resolveLocalPathOption(context, value) {
