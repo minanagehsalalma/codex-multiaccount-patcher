@@ -389,9 +389,11 @@ export async function commandLaunch(context, passthroughArgs) {
   const manifest = await loadCachedManifest(state.manifestPath);
   const { record, manifestRecords } = await resolveRecord(context, dirs, state, manifest, upstream, upstreamSha256);
   if (!record) {
-    throw new Error(
-      `current upstream Codex hash is unsupported. Expected a manifest record for ${upstreamSha256}. Run ${PRIMARY_CLI_NAME} install again with a compatible overlay.`,
+    process.stderr.write(
+      `warning: current upstream Codex hash ${upstreamSha256} has no compatible published overlay yet. Launching the stock Codex binary until support lands.\n`,
     );
+    await launchBinary(context, upstream, upstream.vendorBinaryPath, passthroughArgs, []);
+    return;
   }
   const overlay = await ensureManagedOverlay(context, dirs, record);
   const hydratedRecord = withManagedOverlayPath(record, overlay.managedOverlayPath, overlay.overlaySha256);
@@ -401,6 +403,12 @@ export async function commandLaunch(context, passthroughArgs) {
   );
   await updateStateForRecord(dirs, state, upstream, upstreamSha256, hydratedRecord, overlay);
 
+  await launchBinary(context, upstream, hydratedRecord.managedOverlayPath, passthroughArgs, [
+    path.join(path.dirname(hydratedRecord.managedOverlayPath), "path"),
+  ]);
+}
+
+async function launchBinary(context, upstream, executablePath, passthroughArgs, extraPathDirs) {
   const env = { ...process.env };
   if (context.platform === "win32") {
     const userPath = readWindowsPath("User");
@@ -413,9 +421,10 @@ export async function commandLaunch(context, passthroughArgs) {
   if (upstream.pathDir && (await pathExists(upstream.pathDir))) {
     pathEntries.push(upstream.pathDir);
   }
-  const overlayPathDir = path.join(path.dirname(hydratedRecord.managedOverlayPath), "path");
-  if (await pathExists(overlayPathDir)) {
-    pathEntries.push(overlayPathDir);
+  for (const candidateDir of extraPathDirs) {
+    if (candidateDir && (await pathExists(candidateDir))) {
+      pathEntries.push(candidateDir);
+    }
   }
   if (pathEntries.length > 0) {
     const delimiter = context.platform === "win32" ? ";" : ":";
@@ -425,7 +434,7 @@ export async function commandLaunch(context, passthroughArgs) {
     }
   }
 
-  const child = spawn(hydratedRecord.managedOverlayPath, passthroughArgs, {
+  const child = spawn(executablePath, passthroughArgs, {
     stdio: "inherit",
     env,
     windowsHide: true,
@@ -459,7 +468,6 @@ export async function commandLaunch(context, passthroughArgs) {
   }
   process.exit(outcome.code ?? 1);
 }
-
 async function resolveRecord(context, dirs, state, cachedManifest, upstream, upstreamSha256) {
   let manifest = cachedManifest;
   if (state.manifestSource) {

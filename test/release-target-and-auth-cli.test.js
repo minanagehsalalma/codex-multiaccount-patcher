@@ -28,6 +28,7 @@ test("inspectAuthCli prefers vendored codex-auth snapshot", async () => {
     arch: "x64",
     projectRoot: tempRoot,
     execPath: process.execPath,
+    preferBundledAuth: true,
   };
 
   const inspection = await inspectAuthCli(context);

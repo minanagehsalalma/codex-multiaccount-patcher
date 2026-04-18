@@ -15,11 +15,39 @@ export async function runAuthCli(context, args) {
 }
 
 export async function forwardAuthCli(context, args) {
-  const launch = await inspectAuthCli(context);
-  return spawnAndCapture(launch, args, { captureOutput: false });
+  const candidates = await resolveAuthCliCandidates(context);
+  return runAuthCliCandidates(candidates, args, { captureOutput: false });
 }
 
 export async function inspectAuthCli(context) {
+  const [firstCandidate] = await resolveAuthCliCandidates(context);
+  if (firstCandidate) {
+    return firstCandidate;
+  }
+  throw new Error(
+    `auth toolkit is unavailable. Reinstall ${PRIMARY_CLI_NAME} so it bundles @loongphy/codex-auth or includes the vendored snapshot, or install ${AUTH_LEGACY_CLI_NAME} separately.`,
+  );
+}
+
+export async function resolveAuthCliCandidates(context) {
+  const candidates = [];
+  const seenEntrypoints = new Set();
+
+  const pushCandidate = (candidate) => {
+    if (!candidate || seenEntrypoints.has(candidate.entrypoint)) {
+      return;
+    }
+    seenEntrypoints.add(candidate.entrypoint);
+    candidates.push(candidate);
+  };
+
+  if (!context.preferBundledAuth) {
+    const globalEntrypoint = resolveGlobalAuthEntrypoint(context);
+    if (globalEntrypoint && (await pathExists(globalEntrypoint))) {
+      pushCandidate(buildAuthInspection(context, "global-install", globalEntrypoint));
+    }
+  }
+
   if (context.platform === "win32" && context.arch === "x64") {
     const vendoredEntrypoint = path.join(
       context.projectRoot,
@@ -29,14 +57,7 @@ export async function inspectAuthCli(context) {
       "codex-auth.js",
     );
     if (await pathExists(vendoredEntrypoint)) {
-      return buildAuthInspection(context, "vendored-working-snapshot", vendoredEntrypoint);
-    }
-  }
-
-  if (!context.preferBundledAuth) {
-    const globalEntrypoint = resolveGlobalAuthEntrypoint(context);
-    if (globalEntrypoint && (await pathExists(globalEntrypoint))) {
-      return buildAuthInspection(context, "global-install", globalEntrypoint);
+      pushCandidate(buildAuthInspection(context, "vendored-working-snapshot", vendoredEntrypoint));
     }
   }
 
@@ -49,17 +70,15 @@ export async function inspectAuthCli(context) {
     "codex-auth.js",
   );
   if (await pathExists(bundledEntrypoint)) {
-    return buildAuthInspection(context, "bundled-npm-fallback", bundledEntrypoint);
+    pushCandidate(buildAuthInspection(context, "bundled-npm-fallback", bundledEntrypoint));
   }
 
-  throw new Error(
-    `auth toolkit is unavailable. Reinstall ${PRIMARY_CLI_NAME} so it bundles @loongphy/codex-auth or includes the vendored snapshot, or install ${AUTH_LEGACY_CLI_NAME} separately.`,
-  );
+  return candidates;
 }
 
 export async function captureAuthCli(context, args) {
-  const launch = await inspectAuthCli(context);
-  return spawnAndCapture(launch, args, { captureOutput: true });
+  const candidates = await resolveAuthCliCandidates(context);
+  return runAuthCliCandidates(candidates, args, { captureOutput: true });
 }
 
 function buildAuthInspection(context, source, entrypoint) {
@@ -146,4 +165,27 @@ async function spawnAndCapture(launch, args, { captureOutput }) {
     stdout,
     stderr,
   };
+}
+
+async function runAuthCliCandidates(candidates, args, options) {
+  if (!candidates.length) {
+    throw new Error(
+      `auth toolkit is unavailable. Reinstall ${PRIMARY_CLI_NAME} so it bundles @loongphy/codex-auth or includes the vendored snapshot, or install ${AUTH_LEGACY_CLI_NAME} separately.`,
+    );
+  }
+
+  let lastOutcome = null;
+  for (let index = 0; index < candidates.length; index += 1) {
+    const outcome = await spawnAndCapture(candidates[index], args, options);
+    lastOutcome = outcome;
+    if (outcome.code === 0 || !shouldRetryAuthWithNextCandidate(outcome)) {
+      return outcome;
+    }
+  }
+  return lastOutcome;
+}
+
+function shouldRetryAuthWithNextCandidate(outcome) {
+  const combinedOutput = `${outcome.stdout ?? ""}\n${outcome.stderr ?? ""}`;
+  return /Register-ScheduledTask/i.test(combinedOutput) && /Access is denied|0x80070005/i.test(combinedOutput);
 }
