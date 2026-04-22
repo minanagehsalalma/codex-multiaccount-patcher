@@ -5,24 +5,46 @@ import path from "node:path";
 const CLIENT_RELATIVE_PATH = path.join("codex-rs", "core", "src", "client.rs");
 const TEST_SUITE_MOD_RELATIVE_PATH = path.join("codex-rs", "core", "tests", "suite", "mod.rs");
 const TEST_BINARY_SUPPORT_RELATIVE_PATH = path.join("codex-rs", "test-binary-support", "lib.rs");
-const TEST_FALLBACK_PATCH = path.join("patches", "codex-hot-reload-tests.patch");
+const TEST_FALLBACK_PATCHES = [
+  path.join("patches", "codex-hot-reload-tests.patch"),
+  path.join("patches", "codex-hot-reload-tests-0.122.patch"),
+];
 
 const CLIENT_RUNTIME_REWRITES = [
   {
     id: "current-client-setup-field",
-    search: `struct CurrentClientSetup {
+    variants: [
+      {
+        search: `struct CurrentClientSetup {
     auth: Option<CodexAuth>,
     api_provider: codex_api::Provider,
     api_auth: CoreAuthProvider,
 }
 `,
-    replacement: `struct CurrentClientSetup {
+        replacement: `struct CurrentClientSetup {
     auth: Option<CodexAuth>,
     api_provider: codex_api::Provider,
     api_auth: CoreAuthProvider,
     auth_connection_changed: bool,
 }
 `,
+      },
+      {
+        search: `struct CurrentClientSetup {
+    auth: Option<CodexAuth>,
+    api_provider: ApiProvider,
+    api_auth: SharedAuthProvider,
+}
+`,
+        replacement: `struct CurrentClientSetup {
+    auth: Option<CodexAuth>,
+    api_provider: ApiProvider,
+    api_auth: SharedAuthProvider,
+    auth_connection_changed: bool,
+}
+`,
+      },
+    ],
   },
   {
     id: "auth-connection-key-helper",
@@ -52,7 +74,9 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
   },
   {
     id: "current-client-setup-reload",
-    search: `    async fn current_client_setup(&self) -> Result<CurrentClientSetup> {
+    variants: [
+      {
+        search: `    async fn current_client_setup(&self) -> Result<CurrentClientSetup> {
         let auth = match self.state.auth_manager.as_ref() {
             Some(manager) => manager.auth().await,
             None => None,
@@ -69,7 +93,7 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
         })
     }
 `,
-    replacement: `    async fn current_client_setup(&self) -> Result<CurrentClientSetup> {
+        replacement: `    async fn current_client_setup(&self) -> Result<CurrentClientSetup> {
         let (auth, auth_connection_changed) = match self.state.auth_manager.as_ref() {
             Some(manager) => {
                 let cached_before_reload = auth_connection_key(manager.auth_cached().as_ref());
@@ -94,10 +118,121 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
         })
     }
 `,
+      },
+      {
+        search: `    async fn current_client_setup(
+        &self,
+        agent_task: Option<&RegisteredAgentTask>,
+    ) -> Result<CurrentClientSetup> {
+        let auth = self.state.provider.auth().await;
+        let api_provider = self.state.provider.api_provider().await?;
+        let auth_manager = self.state.provider.auth_manager();
+        let api_auth = match (agent_task, auth_manager.as_ref(), auth.as_ref()) {
+            (Some(agent_task), Some(auth_manager), Some(auth)) => {
+                if let Some(authorization_header_value) = auth_manager
+                    .chatgpt_agent_task_authorization_header_for_auth(
+                        auth,
+                        agent_task.authorization_target(),
+                    )
+                    .map_err(|err| {
+                        CodexErr::Stream(
+                            format!("failed to build agent assertion authorization: {err}"),
+                            None,
+                        )
+                    })?
+                {
+                    debug!(
+                        agent_runtime_id = %agent_task.agent_runtime_id,
+                        task_id = %agent_task.task_id,
+                        "using agent assertion authorization for downstream request"
+                    );
+                    let mut auth_provider = AuthorizationHeaderAuthProvider::new(
+                        Some(authorization_header_value),
+                        /*account_id*/ None,
+                    );
+                    if auth.is_fedramp_account() {
+                        auth_provider = auth_provider.with_fedramp_routing_header();
+                    }
+                    Arc::new(auth_provider)
+                } else {
+                    self.state.provider.api_auth().await?
+                }
+            }
+            _ => self.state.provider.api_auth().await?,
+        };
+        Ok(CurrentClientSetup {
+            auth,
+            api_provider,
+            api_auth,
+        })
+    }
+`,
+        replacement: `    async fn current_client_setup(
+        &self,
+        agent_task: Option<&RegisteredAgentTask>,
+    ) -> Result<CurrentClientSetup> {
+        let auth_manager = self.state.provider.auth_manager();
+        let (auth, auth_connection_changed) = match auth_manager.as_ref() {
+            Some(manager) => {
+                let cached_before_reload = auth_connection_key(manager.auth_cached().as_ref());
+                manager.reload();
+                let auth = self.state.provider.auth().await;
+                let auth_connection_changed =
+                    cached_before_reload != auth_connection_key(auth.as_ref());
+                (auth, auth_connection_changed)
+            }
+            None => (self.state.provider.auth().await, false),
+        };
+        let api_provider = self.state.provider.api_provider().await?;
+        let api_auth = match (agent_task, auth_manager.as_ref(), auth.as_ref()) {
+            (Some(agent_task), Some(auth_manager), Some(auth)) => {
+                if let Some(authorization_header_value) = auth_manager
+                    .chatgpt_agent_task_authorization_header_for_auth(
+                        auth,
+                        agent_task.authorization_target(),
+                    )
+                    .map_err(|err| {
+                        CodexErr::Stream(
+                            format!("failed to build agent assertion authorization: {err}"),
+                            None,
+                        )
+                    })?
+                {
+                    debug!(
+                        agent_runtime_id = %agent_task.agent_runtime_id,
+                        task_id = %agent_task.task_id,
+                        "using agent assertion authorization for downstream request"
+                    );
+                    let mut auth_provider = AuthorizationHeaderAuthProvider::new(
+                        Some(authorization_header_value),
+                        /*account_id*/ None,
+                    );
+                    if auth.is_fedramp_account() {
+                        auth_provider = auth_provider.with_fedramp_routing_header();
+                    }
+                    Arc::new(auth_provider)
+                } else {
+                    self.state.provider.api_auth().await?
+                }
+            }
+            _ => self.state.provider.api_auth().await?,
+        };
+        Ok(CurrentClientSetup {
+            auth,
+            api_provider,
+            api_auth,
+            auth_connection_changed,
+        })
+    }
+`,
+      },
+    ],
   },
   {
     id: "preconnect-websocket-reset-on-auth-change",
-    search: `        if !self.client.responses_websocket_enabled() {
+    variants: [
+      {
+        search: `        if !self.client.responses_websocket_enabled() {
             return Ok(());
         }
         if self.websocket_session.connection.is_some() {
@@ -110,7 +245,7 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
             ))
         })?;
 `,
-    replacement: `        if !self.client.responses_websocket_enabled() {
+        replacement: `        if !self.client.responses_websocket_enabled() {
             return Ok(());
         }
         let client_setup = self.client.current_client_setup().await.map_err(|err| {
@@ -124,6 +259,45 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
             return Ok(());
         }
 `,
+      },
+      {
+        search: `        if !self.client.responses_websocket_enabled() {
+            return Ok(());
+        }
+        if self.websocket_session.connection.is_some() {
+            return Ok(());
+        }
+
+        let client_setup = self
+            .client
+            .current_client_setup(self.agent_task.as_ref())
+            .await
+            .map_err(|err| {
+                ApiError::Stream(format!(
+                    "failed to build websocket prewarm client setup: {err}"
+                ))
+            })?;
+`,
+        replacement: `        if !self.client.responses_websocket_enabled() {
+            return Ok(());
+        }
+        let client_setup = self
+            .client
+            .current_client_setup(self.agent_task.as_ref())
+            .await
+            .map_err(|err| {
+                ApiError::Stream(format!(
+                    "failed to build websocket prewarm client setup: {err}"
+                ))
+            })?;
+        if client_setup.auth_connection_changed {
+            self.reset_websocket_session();
+        } else if self.websocket_session.connection.is_some() {
+            return Ok(());
+        }
+`,
+      },
+    ],
   },
   {
     id: "websocket-params-destructure",
@@ -173,7 +347,9 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
   },
   {
     id: "websocket-connect-params-field",
-    search: `struct WebsocketConnectParams<'a> {
+    variants: [
+      {
+        search: `struct WebsocketConnectParams<'a> {
     session_telemetry: &'a SessionTelemetry,
     api_provider: codex_api::Provider,
     api_auth: CoreAuthProvider,
@@ -183,7 +359,7 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
     request_route_telemetry: RequestRouteTelemetry,
 }
 `,
-    replacement: `struct WebsocketConnectParams<'a> {
+        replacement: `struct WebsocketConnectParams<'a> {
     session_telemetry: &'a SessionTelemetry,
     api_provider: codex_api::Provider,
     api_auth: CoreAuthProvider,
@@ -194,6 +370,31 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
     request_route_telemetry: RequestRouteTelemetry,
 }
 `,
+      },
+      {
+        search: `struct WebsocketConnectParams<'a> {
+    session_telemetry: &'a SessionTelemetry,
+    api_provider: codex_api::Provider,
+    api_auth: SharedAuthProvider,
+    turn_metadata_header: Option<&'a str>,
+    options: &'a ApiResponsesOptions,
+    auth_context: AuthRequestTelemetryContext,
+    request_route_telemetry: RequestRouteTelemetry,
+}
+`,
+        replacement: `struct WebsocketConnectParams<'a> {
+    session_telemetry: &'a SessionTelemetry,
+    api_provider: codex_api::Provider,
+    api_auth: SharedAuthProvider,
+    turn_metadata_header: Option<&'a str>,
+    options: &'a ApiResponsesOptions,
+    auth_context: AuthRequestTelemetryContext,
+    auth_connection_changed: bool,
+    request_route_telemetry: RequestRouteTelemetry,
+}
+`,
+      },
+    ],
   },
 ];
 
@@ -307,9 +508,9 @@ export async function applyMaintainedPatch({
     mode,
   });
 
-  const fallbackPatchPath = path.join(projectRoot, TEST_FALLBACK_PATCH);
-  const fallbackPatch = await applyFallbackPatch({
-    patchPath: fallbackPatchPath,
+  const fallbackPatchPaths = TEST_FALLBACK_PATCHES.map((patchPath) => path.join(projectRoot, patchPath));
+  const fallbackPatch = await applyFallbackPatches({
+    patchPaths: fallbackPatchPaths,
     upstreamRoot,
     mode,
   });
@@ -398,22 +599,27 @@ function applyRewritePlan(initialText, rewrites) {
 }
 
 function replaceUnique(text, rewrite) {
-  if (text.includes(rewrite.replacement) && !text.includes(rewrite.search)) {
+  const variants = rewrite.variants ?? [rewrite];
+  const searchMatches = variants.reduce((sum, variant) => sum + countOccurrences(text, variant.search), 0);
+  const replacementPresent = variants.some((variant) => text.includes(variant.replacement));
+
+  if (replacementPresent && searchMatches === 0) {
     return { text, step: { id: rewrite.id, status: "already-applied" } };
   }
 
-  const matches = countOccurrences(text, rewrite.search);
-  if (matches !== 1) {
-    if (rewrite.optional && matches === 0) {
+  const matchedVariants = variants.filter((variant) => countOccurrences(text, variant.search) > 0);
+  if (matchedVariants.length !== 1 || searchMatches !== 1) {
+    if (rewrite.optional && searchMatches === 0) {
       return { text, step: { id: rewrite.id, status: "skipped" } };
     }
     throw new Error(
-      `rewrite ${rewrite.id} expected exactly one match, found ${matches}`,
+      `rewrite ${rewrite.id} expected exactly one match, found ${searchMatches}`,
     );
   }
 
+  const [selectedVariant] = matchedVariants;
   return {
-    text: text.replace(rewrite.search, rewrite.replacement),
+    text: text.replace(selectedVariant.search, selectedVariant.replacement),
     step: { id: rewrite.id, status: "applied" },
   };
 }
@@ -439,6 +645,20 @@ function insertAfterUnique(text, rewrite) {
   };
 }
 
+async function applyFallbackPatches({ patchPaths, upstreamRoot, mode }) {
+  const failures = [];
+
+  for (const patchPath of patchPaths) {
+    try {
+      return await applyFallbackPatch({ patchPath, upstreamRoot, mode });
+    } catch (error) {
+      failures.push(`${patchPath}: ${error.message}`);
+    }
+  }
+
+  throw new Error(`fallback patch drifted: ${failures.join("\n")}`);
+}
+
 async function applyFallbackPatch({ patchPath, upstreamRoot, mode }) {
   const applyCheck = await runGitApply(["--check", patchPath], upstreamRoot);
   if (applyCheck.ok) {
@@ -457,7 +677,7 @@ async function applyFallbackPatch({ patchPath, upstreamRoot, mode }) {
   }
 
   throw new Error(
-    `fallback patch drifted: ${applyCheck.stderr || applyCheck.stdout || reverseCheck.stderr || reverseCheck.stdout}`.trim(),
+    `${applyCheck.stderr || applyCheck.stdout || reverseCheck.stderr || reverseCheck.stdout}`.trim(),
   );
 }
 
