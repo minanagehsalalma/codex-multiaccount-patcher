@@ -1,7 +1,8 @@
 {
   "name": "@loongphy/codex-auth",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "CLI for switching Codex accounts",
+  "codexAuthPreviewLabel": "multiaccount-bundled",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -20,10 +21,12 @@
     "README.md"
   ],
   "optionalDependencies": {
-    "@loongphy/codex-auth-linux-x64": "0.2.2",
-    "@loongphy/codex-auth-darwin-x64": "0.2.2",
-    "@loongphy/codex-auth-darwin-arm64": "0.2.2",
-    "@loongphy/codex-auth-win32-x64": "0.2.2"
+    "@loongphy/codex-auth-linux-x64": "0.2.3",
+    "@loongphy/codex-auth-linux-arm64": "0.2.3",
+    "@loongphy/codex-auth-darwin-x64": "0.2.3",
+    "@loongphy/codex-auth-darwin-arm64": "0.2.3",
+    "@loongphy/codex-auth-win32-x64": "0.2.3",
+    "@loongphy/codex-auth-win32-arm64": "0.2.3"
   },
   "scripts": {
     "check:versions": "node scripts/npm/check-versions.mjs",

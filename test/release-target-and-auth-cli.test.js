@@ -50,6 +50,45 @@ test("inspectAuthCli prefers vendored codex-auth snapshot", async () => {
   await fs.rm(tempRoot, { recursive: true, force: true });
 });
 
+test("inspectAuthCli prefers vendored snapshot over global install on Windows", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-multiaccount-auth-order-"));
+  const vendoredDir = path.join(tempRoot, "vendor", "codex-auth-working-snapshot", "bin");
+  await fs.mkdir(vendoredDir, { recursive: true });
+  const vendoredEntrypoint = path.join(vendoredDir, "codex-auth.js");
+  await fs.writeFile(vendoredEntrypoint, "module.exports = {};\n", "utf8");
+
+  const fakeAppData = path.join(tempRoot, "appdata");
+  const globalDir = path.join(fakeAppData, "npm", "node_modules", "@loongphy", "codex-auth", "bin");
+  await fs.mkdir(globalDir, { recursive: true });
+  const globalEntrypoint = path.join(globalDir, "codex-auth.js");
+  await fs.writeFile(globalEntrypoint, "module.exports = {};\n", "utf8");
+
+  const previousAppData = process.env.APPDATA;
+  process.env.APPDATA = fakeAppData;
+  try {
+    const context = {
+      cwd: tempRoot,
+      homeDir: tempRoot,
+      platform: "win32",
+      arch: "x64",
+      projectRoot: tempRoot,
+      execPath: process.execPath,
+    };
+
+    const inspection = await inspectAuthCli(context);
+    assert.equal(inspection.source, "vendored-working-snapshot");
+    assert.equal(inspection.entrypoint, vendoredEntrypoint);
+    assert.notEqual(inspection.entrypoint, globalEntrypoint);
+  } finally {
+    if (previousAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = previousAppData;
+    }
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("parseAutoSwitchEnabled tolerates ANSI and mixed case", () => {
   assert.equal(parseAutoSwitchEnabled("\u001b[32mauto-switch: ON\u001b[0m\n"), true);
   assert.equal(parseAutoSwitchEnabled("auto-switch: off\n"), false);

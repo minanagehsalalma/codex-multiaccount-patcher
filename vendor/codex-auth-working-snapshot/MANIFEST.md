@@ -15,3 +15,10 @@ Excluded on purpose:
 - user-specific registry or snapshot files
 
 This snapshot is preferred first on Windows so the toolkit reuses the exact machine-verified auth code path before falling back to other installs.
+
+Current bundled feature set:
+
+- portable single-file `export` and additive `import`
+- `export --handoff` for one-machine-at-a-time account moves
+- local-snapshot-based validity checks in `list`
+- `SUB ENDS` countdowns in `list`

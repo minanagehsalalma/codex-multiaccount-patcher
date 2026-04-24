@@ -41,13 +41,6 @@ export async function resolveAuthCliCandidates(context) {
     candidates.push(candidate);
   };
 
-  if (!context.preferBundledAuth) {
-    const globalEntrypoint = resolveGlobalAuthEntrypoint(context);
-    if (globalEntrypoint && (await pathExists(globalEntrypoint))) {
-      pushCandidate(buildAuthInspection(context, "global-install", globalEntrypoint));
-    }
-  }
-
   if (context.platform === "win32" && context.arch === "x64") {
     const vendoredEntrypoint = path.join(
       context.projectRoot,
@@ -58,6 +51,13 @@ export async function resolveAuthCliCandidates(context) {
     );
     if (await pathExists(vendoredEntrypoint)) {
       pushCandidate(buildAuthInspection(context, "vendored-working-snapshot", vendoredEntrypoint));
+    }
+  }
+
+  if (!context.preferBundledAuth) {
+    const globalEntrypoint = resolveGlobalAuthEntrypoint(context);
+    if (globalEntrypoint && (await pathExists(globalEntrypoint))) {
+      pushCandidate(buildAuthInspection(context, "global-install", globalEntrypoint));
     }
   }
 

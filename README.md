@@ -261,9 +261,17 @@ The bundled auth engine is the same native `codex-auth` toolchain, now shipped b
 
 On Windows, the toolkit now prefers a vendored snapshot of the known-good working `codex-auth` machine install before falling back to any other copy. Existing standalone installs still work as a secondary fallback, and fresh installs can still fall back to the npm-bundled auth engine when needed.
 
+That bundled snapshot now includes the newer single-file account handoff flow and richer account metadata in `list`:
+
+- `codex-auth export <file>.json` writes one portable transfer bundle
+- `codex-auth import <file>.json` adds only missing accounts instead of replacing the whole registry
+- `codex-auth export --handoff <file>.json` exports and then removes the local copies for one-machine-at-a-time transfers
+- `codex-auth list` shows a `SUB ENDS` column so you can see when each account subscription is about to end
+
 ```bash
 codex-multiaccount auth status
 codex-multiaccount auth list
+codex-multiaccount auth export C:\path\to\codex-auth-export.json
 codex-multiaccount pin work
 codex-multiaccount switch work
 codex-multiaccount config auto enable
@@ -277,6 +285,7 @@ The compatibility alias still works too:
 ```bash
 codex-auth status
 codex-auth list
+codex-auth export C:\path\to\codex-auth-export.json
 ```
 
 ## Maintained Patch Model
