@@ -56,6 +56,7 @@ The publish workflow:
 7. publishes overlays plus `manifest.json`
 
 Users install the patcher once. After that, the patcher follows published manifest records and overlay assets.
+The release tag is only a distribution label; the runtime selection key is still the exact upstream binary hash from the installed vendor payload.
 
 ## Compatibility Sweep
 
