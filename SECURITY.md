@@ -3,6 +3,7 @@
 ## Reporting
 
 If you find a security issue in this repository, open a private security advisory on GitHub if available. If that is not available yet, do not publish secrets, tokens, or exploitable details in a public issue.
+If you can reproduce the issue locally, include the toolkit version, manifest source, target platform, and whether the problem depends on a forked upstream asset or custom manifest so maintainers can separate runtime bugs from release-selection bugs quickly.
 
 ## Scope Notes
 
