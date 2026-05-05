@@ -48,4 +48,5 @@ Before publishing a release or changing the patch program:
 - keep changes small and reviewable
 - prefer new tests for new behavior
 - docs-only PRs are fine when they remove ambiguity around install, upgrade, rollback, or trust boundaries
+- for install or runtime bug reports, include `codex-multiaccount status` and `codex-multiaccount doctor` output when it is safe to share
 - do not reintroduce hardcoded local paths or host-specific shims
