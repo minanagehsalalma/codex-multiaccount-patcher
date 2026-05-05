@@ -11,6 +11,7 @@ Good contributions:
 - launcher/runtime correctness fixes
 - regression tests
 - Linux validation and install-flow verification
+- docs changes that tighten install, trust-model, or recovery guidance
 
 ## Local Workflow
 
@@ -46,4 +47,5 @@ Before publishing a release or changing the patch program:
 
 - keep changes small and reviewable
 - prefer new tests for new behavior
+- docs-only PRs are fine when they remove ambiguity around install, upgrade, rollback, or trust boundaries
 - do not reintroduce hardcoded local paths or host-specific shims
