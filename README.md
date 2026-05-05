@@ -156,6 +156,7 @@ The toolkit has two runtime roots:
   This remains the upstream Codex home, and it is still the live source of truth for `auth.json`, `accounts/`, session rollouts, and the auth registry that `codex-auth` manages.
 
 `codex-multiaccount doctor` checks both homes together so users do not have to guess which side is broken.
+It is a reporting step, not a repair step: it inspects the two runtime homes and tells you what looks wrong before you change anything.
 
 If you are evaluating the tool skeptically, `doctor` is the first command to run after install because it shows both the patch runtime and auth runtime in one place, including whether auto-switch is actually enabled.
 
