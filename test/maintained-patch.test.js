@@ -113,7 +113,7 @@ test("applyClientRuntimeRewrites patches the runtime hot-reload changes and is i
   assert.equal(first.steps.every((step) => step.status === "applied"), true);
   assert.match(first.text, /auth_connection_changed: bool,/);
   assert.match(first.text, /fn auth_connection_key\(auth: Option<&CodexAuth>\)/);
-  assert.match(first.text, /manager\.reload\(\);/);
+  assert.match(first.text, /manager\.reload\(\)\.await;/);
   assert.match(first.text, /if client_setup\.auth_connection_changed \{/);
   assert.match(first.text, /_ if auth_connection_changed => true,/);
   assert.match(first.text, /auth_connection_changed: client_setup\.auth_connection_changed,/);
@@ -266,7 +266,7 @@ test("applyClientRuntimeRewrites patches the upstream 0.122 runtime layout and i
   assert.equal(first.steps.every((step) => step.status === "applied"), true);
   assert.match(first.text, /auth_connection_changed: bool,/);
   assert.match(first.text, /let \(auth, auth_connection_changed\) = match auth_manager\.as_ref\(\)/);
-  assert.match(first.text, /manager\.reload\(\);/);
+  assert.match(first.text, /manager\.reload\(\)\.await;/);
   assert.match(first.text, /None => \(self\.state\.provider\.auth\(\)\.await, false\),/);
   assert.match(first.text, /if client_setup\.auth_connection_changed \{/);
   assert.match(first.text, /auth_connection_changed: client_setup\.auth_connection_changed,/);
@@ -379,7 +379,7 @@ test("applyClientRuntimeRewrites patches the upstream 0.124 runtime layout and i
   assert.equal(first.steps.every((step) => step.status === "applied"), true);
   assert.match(first.text, /auth_connection_changed: bool,/);
   assert.match(first.text, /let \(auth, auth_connection_changed\) = match auth_manager\.as_ref\(\)/);
-  assert.match(first.text, /manager\.reload\(\);/);
+  assert.match(first.text, /manager\.reload\(\)\.await;/);
   assert.match(first.text, /let api_auth = self\.state\.provider\.api_auth\(\)\.await\?;/);
   assert.match(first.text, /None => \(self\.state\.provider\.auth\(\)\.await, false\),/);
   assert.match(first.text, /if client_setup\.auth_connection_changed \{/);

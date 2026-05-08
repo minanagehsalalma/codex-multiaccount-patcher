@@ -100,7 +100,7 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
         let (auth, auth_connection_changed) = match self.state.auth_manager.as_ref() {
             Some(manager) => {
                 let cached_before_reload = auth_connection_key(manager.auth_cached().as_ref());
-                manager.reload();
+                manager.reload().await;
                 let auth = manager.auth().await;
                 let auth_connection_changed =
                     cached_before_reload != auth_connection_key(auth.as_ref());
@@ -139,7 +139,7 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
         let (auth, auth_connection_changed) = match auth_manager.as_ref() {
             Some(manager) => {
                 let cached_before_reload = auth_connection_key(manager.auth_cached().as_ref());
-                manager.reload();
+                manager.reload().await;
                 let auth = self.state.provider.auth().await;
                 let auth_connection_changed =
                     cached_before_reload != auth_connection_key(auth.as_ref());
@@ -214,7 +214,7 @@ fn auth_connection_key(auth: Option<&CodexAuth>) -> Option<AuthConnectionKey> {
         let (auth, auth_connection_changed) = match auth_manager.as_ref() {
             Some(manager) => {
                 let cached_before_reload = auth_connection_key(manager.auth_cached().as_ref());
-                manager.reload();
+                manager.reload().await;
                 let auth = self.state.provider.auth().await;
                 let auth_connection_changed =
                     cached_before_reload != auth_connection_key(auth.as_ref());
